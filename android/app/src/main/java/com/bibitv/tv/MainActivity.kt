@@ -19,6 +19,17 @@ import com.bibitv.tv.ui.AppViewModel
 class BibiApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
+        // Enregistre le dernier plantage : affiché au démarrage suivant et dans les Réglages.
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching {
+                java.io.File(filesDir, "last_crash.txt").writeText(
+                    "${java.util.Date()}\nBibiTV ${BuildConfig.VERSION_NAME} · Android ${android.os.Build.VERSION.RELEASE} · ${android.os.Build.MODEL}\n\n" +
+                        android.util.Log.getStackTraceString(error),
+                )
+            }
+            previous?.uncaughtException(thread, error)
+        }
         SettingsStore.init(this)
         ProfileStore.init(this)
         DownloadManager.init(this)

@@ -330,6 +330,12 @@ fun SettingsScreen(vm: AppViewModel) {
                 PillButton("Rechercher une mise à jour", { scope.launch { vm.checkUpdate(silent = false) } })
             }
 
+            vm.lastCrash?.let { crash ->
+                Text("DERNIER PLANTAGE", color = C.Red, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 26.dp, bottom = 6.dp))
+                Text(crash.lines().take(9).joinToString("\n"), color = C.Text2, fontSize = 11.sp, lineHeight = 15.sp)
+                PillButton("Effacer", { vm.lastCrash = null }, Modifier.padding(top = 8.dp))
+            }
+
             Row(Modifier.padding(top = 30.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PillButton("Personnaliser mes goûts", { vm.showSettings = false; vm.showPersonalize = true })
                 PillButton("Se déconnecter", { vm.logout() })

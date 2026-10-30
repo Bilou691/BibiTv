@@ -77,6 +77,7 @@ object UpdateManager {
                     val src = body.byteStream()
                     val buf = ByteArray(1 shl 16)
                     var done = 0L
+                    var lastPercent = -1
                     while (true) {
                         ensureActive()
                         val n = src.read(buf)
@@ -84,7 +85,11 @@ object UpdateManager {
                         out.write(buf, 0, n)
                         digest.update(buf, 0, n)
                         done += n
-                        if (total > 0) withContext(Dispatchers.Main) { progress(done.toFloat() / total) }
+                        val percent = if (total > 0) (done * 100 / total).toInt() else 0
+                        if (percent != lastPercent) {
+                            lastPercent = percent
+                            withContext(Dispatchers.Main) { progress(percent / 100f) }
+                        }
                     }
                 }
             }

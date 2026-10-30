@@ -112,8 +112,33 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var updateProgress by mutableStateOf<Float?>(null)
     var updateMessage by mutableStateOf<String?>(null)
 
-    init {
-        viewModelScope.launch { checkUpdate(silent = true) }
+    /** Mise à jour trouvée au démarrage : proposée avant de charger la playlist. */
+    var updatePrompt by mutableStateOf(false)
+    /** Dernier plantage enregistré (texte), affiché dans les Réglages. */
+    var lastCrash by mutableStateOf<String?>(null)
+    private var started = false
+
+    /** Démarrage : recherche de mise à jour d'abord, puis connexion et chargement de la playlist. */
+    fun startup() {
+        if (started) return
+        started = true
+        val crashFile = java.io.File(getApplication<Application>().filesDir, "last_crash.txt")
+        if (crashFile.exists()) {
+            lastCrash = runCatching { crashFile.readText() }.getOrNull()
+            crashFile.delete()
+            updateMessage = "BibiTV s'est fermé de façon inattendue la dernière fois (détails dans Réglages)."
+        }
+        viewModelScope.launch {
+            busy = "Recherche de mise à jour…"
+            update = kotlinx.coroutines.withTimeoutOrNull(8000) { runCatching { UpdateManager.check() }.getOrNull() }
+            busy = null
+            if (update != null) updatePrompt = true else autoLogin()
+        }
+    }
+
+    fun skipUpdate() {
+        updatePrompt = false
+        autoLogin()
     }
 
     // =================== Connexion ===================
@@ -581,6 +606,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 updateProgress = 0f
                 val apk = UpdateManager.download(ctx, u) { updateProgress = it }
                 updateProgress = null
+                // Android ferme BibiTV pendant l'installation, puis la nouvelle version se lance.
+                updateMessage = "Installation… BibiTV va se fermer puis redémarrer à jour."
+                delay(600)
                 UpdateManager.install(ctx, apk)
             } catch (e: Exception) {
                 updateProgress = null

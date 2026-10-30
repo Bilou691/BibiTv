@@ -74,13 +74,16 @@ fun AppRoot(vm: AppViewModel) {
     androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides tvDensity) {
     MaterialTheme(colorScheme = darkColorScheme(background = C.Bg, surface = C.Surface, primary = Color.White)) {
         Box(Modifier.fillMaxSize().background(C.Bg)) {
-            LaunchedEffect(Unit) { vm.autoLogin() }
+            LaunchedEffect(Unit) { vm.startup() }
 
             // Un seul écran à la fois : à la télécommande, le focus ne peut pas « fuir » vers un écran caché.
             val detail = vm.detail
             val req = vm.player
             when {
                 req != null -> PlayerScreen(req, vm, onClose = { vm.player = null })
+                vm.updatePrompt -> UpdatePromptScreen(vm)
+                // Chargement initial (mise à jour, connexion, playlist) : logo + citations de films
+                vm.busy != null && vm.home == null -> LoadingScreen(vm.busy!!)
                 vm.client == null -> LoginScreen(vm)
                 vm.showSettings -> SettingsScreen(vm)
                 vm.showDownloads -> DownloadsScreen(vm)
@@ -89,7 +92,7 @@ fun AppRoot(vm: AppViewModel) {
                 else -> MainScreen(vm)
             }
             vm.menu?.let { m -> ActionMenu(m.title, m.actions) { vm.menu = null } }
-            vm.busy?.let { Spinner(it) }
+            if (vm.home != null) vm.busy?.let { Spinner(it) }
             Toast(vm)
 
             if (vm.showSplash) SplashScreen { vm.showSplash = false }
