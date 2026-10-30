@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _epgDelay = new() { Interval = TimeSpan.FromMilliseconds(220) };
     private readonly DispatcherTimer _epgHide = new() { Interval = TimeSpan.FromMilliseconds(350) };
     private MediaItem? _epgItem;
+    private readonly Dictionary<string, MediaItem> _byKey = new();
     private CancellationTokenSource? _updateCts;
 
     public MainWindow()
@@ -127,6 +128,7 @@ public partial class MainWindow : Window
         _player?.Close();
         _client = null;
         _items.Clear();
+        _byKey.Clear();
         _categories.Clear();
         _homeBuilt = false;
         _homeCts?.Cancel();
@@ -171,6 +173,7 @@ public partial class MainWindow : Window
         var items = TitleGrouper.Group(itemsTask.Result, merge: section != Section.Live);
         if (section == Section.Live) ChannelBrands.Tag(items); // Canal+, beIN, RMC Sport…
         _items[section] = items;
+        foreach (var i in items) _byKey[i.Key] = i;
         _categories[section] = catsTask.Result;
         return true;
     }
@@ -189,6 +192,8 @@ public partial class MainWindow : Window
         if (_client == null) return;
         _section = section;
         ShowView(home: false);
+        HideWatchedToggle.Visibility = section == Section.Live ? Visibility.Collapsed : Visibility.Visible;
+        HideWatchedToggle.IsChecked = ProfileService.Current.HideWatched;
         SearchBox.Text = "";
         PosterList.Visibility = section == Section.Live ? Visibility.Collapsed : Visibility.Visible;
         LiveList.Visibility = section == Section.Live ? Visibility.Visible : Visibility.Collapsed;
@@ -302,6 +307,8 @@ public partial class MainWindow : Window
             HeaderTitle.Text = cat?.Name ?? "";
         }
 
+        if (ProfileService.Current.HideWatched && query.Length == 0 && _section != Section.Live)
+            result = result.Where(i => !i.IsWatched);
         var list = result.ToList();
         HeaderCount.Text = list.Count switch
         {
@@ -331,6 +338,11 @@ public partial class MainWindow : Window
 
     private void Tile_Click(object sender, MouseButtonEventArgs e)
     {
+        if ((sender as ListBoxItem)?.DataContext is HistoryEntry h)
+        {
+            _ = ResumeAsync(h, ItemsControl.ItemsControlFromItemContainer((ListBoxItem)sender));
+            return;
+        }
         if (Unwrap((sender as ListBoxItem)?.DataContext) is { } item)
             Open(item, ItemsControl.ItemsControlFromItemContainer((ListBoxItem)sender));
     }
@@ -353,12 +365,30 @@ public partial class MainWindow : Window
 
     private void Tile_RightClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not ListBoxItem container || Unwrap(container.DataContext) is not { } item) return;
-        var fav = IsFavorite(item);
-        var menuItem = new MenuItem { Header = fav ? "Retirer de Ma liste" : "Ajouter à Ma liste" };
-        menuItem.Click += (_, _) => ToggleFavorite(item);
+        if (sender is not ListBoxItem container) return;
         var menu = new ContextMenu { PlacementTarget = container };
-        menu.Items.Add(menuItem);
+        void Add(string header, Action action)
+        {
+            var mi = new MenuItem { Header = header };
+            mi.Click += (_, _) => action();
+            menu.Items.Add(mi);
+        }
+
+        if (container.DataContext is HistoryEntry h)
+        {
+            Add("Retirer de l'historique", () => { ProfileService.RemoveHistory(h.Key); RefreshPersonalRows(); });
+        }
+        else if (Unwrap(container.DataContext) is { } item)
+        {
+            Add(IsFavorite(item) ? "Retirer de Ma liste" : "Ajouter à Ma liste", () => ToggleFavorite(item));
+            if (item.Kind != Section.Live)
+            {
+                Add(item.IsWatched ? "Marquer comme non vu" : "Marquer comme vu", () => SetWatched(item, !item.IsWatched));
+                Add(item.IsLiked ? "Retirer « J'aime »" : "J'aime", () => SetRating(item, item.IsLiked ? 0 : 1));
+                Add(item.IsDisliked ? "Retirer « Je n'aime pas »" : "Je n'aime pas", () => SetRating(item, item.IsDisliked ? 0 : -1));
+            }
+        }
+        else return;
         menu.IsOpen = true;
         e.Handled = true;
     }
@@ -371,7 +401,10 @@ public partial class MainWindow : Window
             // Lecture directe, avec zapping possible dans la liste d'où vient la chaîne.
             var channels = source?.ItemsSource?.Cast<object>().Select(Unwrap).OfType<MediaItem>().Where(m => m.Kind == Section.Live).ToList();
             if (channels == null || !channels.Contains(item)) channels = new List<MediaItem> { item };
-            var playlist = channels.Select(c => new PlaylistEntry(c.Title, "En direct", _client!.LiveUrl(c.Id))).ToList();
+            var playlist = channels.Select(c => new PlaylistEntry(c.Title, "En direct", _client!.LiveUrl(c.Id))
+            {
+                Tag = new HistoryEntry { Key = c.Key, Kind = Section.Live, ItemId = c.Id, Title = c.Title, ImageUrl = c.ImageUrl },
+            }).ToList();
             StartPlayer(playlist, Math.Max(0, channels.IndexOf(item)), isLive: true,
                 liveInfo: async i => (await GetEpgAsync(channels[i])).FirstOrDefault(x => x.IsNow) is { } now
                     ? $"En direct  ·  {now.TimeRange}  ·  {now.Title}" : null);
@@ -397,6 +430,7 @@ public partial class MainWindow : Window
         DetailBackdrop.Source = null;
         DownloadButton.Visibility = item.Kind == Section.Movies ? Visibility.Visible : Visibility.Collapsed;
         UpdateFavButton();
+        UpdateProfileButtons();
         DetailView.Visibility = Visibility.Visible;
         DetailScroll.ScrollToTop();
 
@@ -512,25 +546,58 @@ public partial class MainWindow : Window
         if (_client == null || _detailItem == null || _variant == null) return;
         if (_variant.Kind == Section.Movies)
         {
-            var ext = _variant.Extension ?? _movieInfo?.Extension;
             var subtitle = string.Join("   ·   ", new[] { _variant.VersionLabel, DetailMeta.Text }.Where(x => !string.IsNullOrWhiteSpace(x)));
-            StartPlayer(new List<PlaylistEntry> { new(_detailItem.Title, subtitle, _client.MovieUrl(_variant.Id, ext)) }, 0, isLive: false);
+            PlayMovie(_detailItem, _variant, _variant.Extension ?? _movieInfo?.Extension, subtitle);
         }
-        else if (_seriesInfo?.Seasons.FirstOrDefault()?.Episodes.FirstOrDefault() is { } first)
+        else if (_seriesInfo != null)
         {
-            PlayEpisode(first);
+            // Reprend la série où on en était, sinon premier épisode.
+            var all = _seriesInfo.Seasons.SelectMany(x => x.Episodes).ToList();
+            var h = ProfileService.Current.History.FirstOrDefault(x => x.Key == _detailItem.Key);
+            var ep = all.FirstOrDefault(x => x.Id == h?.EpisodeId) ?? all.FirstOrDefault(x => !x.IsWatched) ?? all.FirstOrDefault();
+            if (ep != null) PlayEpisode(ep);
         }
+    }
+
+    /// <summary>Lance un film en reprenant la position mémorisée.</summary>
+    private void PlayMovie(MediaItem group, MediaItem variant, string? ext, string subtitle)
+    {
+        if (_client == null) return;
+        var previous = ProfileService.Current.History.FirstOrDefault(x => x.Key == group.Key && x.ItemId == variant.Id);
+        StartPlayer(new List<PlaylistEntry>
+        {
+            new(group.Title, subtitle, _client.MovieUrl(variant.Id, ext))
+            {
+                StartMs = previous is { HasProgress: true } ? previous.PositionMs : 0,
+                Tag = new HistoryEntry { Key = group.Key, Kind = Section.Movies, ItemId = variant.Id, Title = group.Title, ImageUrl = group.ImageUrl, Extension = ext },
+            },
+        }, 0, isLive: false);
     }
 
     /// <summary>Lance un épisode ; la suite de la série s'enchaîne automatiquement.</summary>
     private void PlayEpisode(Episode episode)
     {
-        if (_client == null || _seriesInfo == null || _detailItem == null) return;
-        var all = _seriesInfo.Seasons.SelectMany(s => s.Episodes).ToList();
+        if (_seriesInfo == null || _detailItem == null || _variant == null) return;
+        PlaySeries(_detailItem, _variant.Id, _seriesInfo, episode);
+    }
+
+    private void PlaySeries(MediaItem series, string seriesVariantId, SeriesInfo info, Episode episode)
+    {
+        if (_client == null) return;
+        var previous = ProfileService.Current.History.FirstOrDefault(x => x.Key == series.Key);
+        var all = info.Seasons.SelectMany(x => x.Episodes).ToList();
         var playlist = all.Select(ep => new PlaylistEntry(
-            _detailItem.Title,
+            series.Title,
             $"Saison {ep.Season}, épisode {ep.Number}" + (string.IsNullOrWhiteSpace(ep.Title) ? "" : $"  ·  {ep.Title}"),
-            _client.EpisodeUrl(ep.Id, ep.Extension))).ToList();
+            _client.EpisodeUrl(ep.Id, ep.Extension))
+        {
+            StartMs = previous is { HasProgress: true } && previous.EpisodeId == ep.Id ? previous.PositionMs : 0,
+            Tag = new HistoryEntry
+            {
+                Key = series.Key, Kind = Section.Series, ItemId = seriesVariantId, Title = series.Title, ImageUrl = series.ImageUrl,
+                EpisodeId = ep.Id, Extension = ep.Extension, EpisodeLabel = $"S{ep.Season} · É{ep.Number}",
+            },
+        }).ToList();
         StartPlayer(playlist, Math.Max(0, all.IndexOf(episode)), isLive: false);
     }
 
@@ -776,11 +843,7 @@ public partial class MainWindow : Window
         SetRow(TopChannelsRow, TopChannelsScroll, TopChannelsList, topChannels);
         TopChannelsSource.Text = "Les chaînes les plus regardées en France (audiences Médiamétrie)";
 
-        SetRow(RecentMoviesRow, RecentMoviesScroll, RecentMoviesList, movies.OrderByDescending(m => m.Added).Take(24).ToList());
-        RecentMoviesSource.Text = "Derniers ajouts au catalogue";
-        SetRow(RecentSeriesRow, RecentSeriesScroll, RecentSeriesList, series.OrderByDescending(m => m.Added).Take(24).ToList());
-        RecentSeriesSource.Text = "Dernières séries ajoutées ou mises à jour";
-        RefreshMyListRow();
+        RefreshPersonalRows();
 
         HomeEmpty.Text = errors.Count > 0 ? "Une partie du catalogue n'a pas pu être chargée : " + string.Join(" / ", errors.Distinct()) : "";
         HomeEmpty.Visibility = errors.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -837,7 +900,7 @@ public partial class MainWindow : Window
     {
         if (_client == null || _heroItem == null) return;
         var v = _heroItem.Variants.FirstOrDefault() ?? _heroItem;
-        StartPlayer(new List<PlaylistEntry> { new(_heroItem.Title, v.Tag, _client.MovieUrl(v.Id, v.Extension)) }, 0, isLive: false);
+        PlayMovie(_heroItem, v, v.Extension, v.Tag);
     }
 
     private void HeroInfo_Click(object sender, RoutedEventArgs e)
@@ -1021,6 +1084,228 @@ public partial class MainWindow : Window
         return t.TotalHours >= 1 ? $"{(int)t.TotalHours} h {t.Minutes:00}" : $"{Math.Max(1, (int)Math.Ceiling(t.TotalMinutes))} min";
     }
 
+    // ===================== Historique, « déjà vu », goûts =====================
+
+    private void OnEntryStarted(PlaylistEntry entry)
+    {
+        if (entry.Tag is not HistoryEntry h) return;
+        ProfileService.Touch(h);
+        if (_homeBuilt) RefreshPersonalRows();
+    }
+
+    private void OnPlaybackProgress(PlaylistEntry entry, long position, long length)
+    {
+        if (entry.Tag is not HistoryEntry h || length <= 0) return;
+        var finished = position >= length * 0.92;
+        h.PositionMs = finished ? 0 : position;
+        h.LengthMs = length;
+
+        if (finished)
+        {
+            var watchKey = h.EpisodeId != null ? ProfileService.EpisodeKey(h.EpisodeId) : h.Key;
+            ProfileService.Current.Watched.Add(watchKey);
+            if (h.EpisodeId == null && _byKey.TryGetValue(h.Key, out var item)) item.NotifyProfileChanged();
+        }
+        ProfileService.Touch(h);
+        EpisodeList.Items.Refresh();
+        if (_homeBuilt) RefreshPersonalRows();
+    }
+
+    /// <summary>Reprend un élément de l'historique (film, épisode ou chaîne).</summary>
+    private async Task ResumeAsync(HistoryEntry h, ItemsControl? source)
+    {
+        if (_client == null) return;
+        try
+        {
+            switch (h.Kind)
+            {
+                case Section.Live:
+                    var channels = (source?.ItemsSource as IEnumerable<HistoryEntry>)?.ToList() ?? new() { h };
+                    var playlist = channels.Select(c => new PlaylistEntry(c.Title, "En direct", _client.LiveUrl(c.ItemId))
+                    {
+                        Tag = new HistoryEntry { Key = c.Key, Kind = Section.Live, ItemId = c.ItemId, Title = c.Title, ImageUrl = c.ImageUrl },
+                    }).ToList();
+                    var live = channels.Select(c => _byKey.GetValueOrDefault(c.Key) ?? new MediaItem { Kind = Section.Live, Id = c.ItemId, Title = c.Title }).ToList();
+                    StartPlayer(playlist, Math.Max(0, channels.IndexOf(h)), isLive: true,
+                        liveInfo: async i => (await GetEpgAsync(live[i])).FirstOrDefault(x => x.IsNow) is { } now
+                            ? $"En direct  ·  {now.TimeRange}  ·  {now.Title}" : null);
+                    break;
+
+                case Section.Movies:
+                    var group = _byKey.GetValueOrDefault(h.Key)
+                                ?? new MediaItem { Kind = Section.Movies, Id = h.ItemId, Title = h.Title, ImageUrl = h.ImageUrl };
+                    var variant = group.Variants.FirstOrDefault(v => v.Id == h.ItemId) ?? group.Variants.FirstOrDefault() ?? group;
+                    PlayMovie(group, variant, h.Extension ?? variant.Extension, variant.Tag);
+                    break;
+
+                case Section.Series:
+                    ShowLoading("Reprise de la série…");
+                    var info = await _client.GetSeriesInfoAsync(h.ItemId);
+                    HideLoading();
+                    var series = _byKey.GetValueOrDefault(h.Key)
+                                 ?? new MediaItem { Kind = Section.Series, Id = h.ItemId, Title = h.Title, ImageUrl = h.ImageUrl };
+                    var all = info.Seasons.SelectMany(x => x.Episodes).ToList();
+                    var current = all.FindIndex(x => x.Id == h.EpisodeId);
+                    // Épisode terminé : on passe au suivant.
+                    if (current >= 0 && !h.HasProgress && all[current].IsWatched && current < all.Count - 1) current++;
+                    if (all.Count > 0) PlaySeries(series, h.ItemId, info, all[Math.Max(0, current)]);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            HideLoading();
+            MessageBox.Show(this, $"Impossible de reprendre la lecture : {ex.Message}", "BibiTV", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void SetWatched(MediaItem item, bool watched)
+    {
+        ProfileService.SetWatched(item.Key, watched);
+        item.NotifyProfileChanged();
+        if (_detailItem == item) UpdateProfileButtons();
+        if (ProfileService.Current.HideWatched && !_onHome) ApplyFilter();
+        if (_homeBuilt) RefreshPersonalRows();
+    }
+
+    private void SetRating(MediaItem item, int rating)
+    {
+        ProfileService.SetRating(item.Key, rating);
+        item.NotifyProfileChanged();
+        if (_detailItem == item) UpdateProfileButtons();
+        if (_homeBuilt && PersonalizeView.Visibility != Visibility.Visible) RefreshPersonalRows();
+    }
+
+    private void DetailWatched_Click(object sender, RoutedEventArgs e)
+    {
+        if (_detailItem != null) SetWatched(_detailItem, !_detailItem.IsWatched);
+    }
+
+    private void DetailLike_Click(object sender, RoutedEventArgs e)
+    {
+        if (_detailItem != null) SetRating(_detailItem, _detailItem.IsLiked ? 0 : 1);
+    }
+
+    private void DetailDislike_Click(object sender, RoutedEventArgs e)
+    {
+        if (_detailItem != null) SetRating(_detailItem, _detailItem.IsDisliked ? 0 : -1);
+    }
+
+    private void UpdateProfileButtons()
+    {
+        if (_detailItem == null) return;
+        WatchedButton.Content = _detailItem.IsWatched ? "✓  Vu" : "Marquer comme vu";
+        StyleChoice(WatchedButton, _detailItem.IsWatched, "#0A84FF");
+        StyleChoice(LikeButton, _detailItem.IsLiked, "#30D158");
+        StyleChoice(DislikeButton, _detailItem.IsDisliked, "#FF453A");
+    }
+
+    private static void StyleChoice(Button b, bool active, string color)
+    {
+        if (active) b.Background = (Brush)new BrushConverter().ConvertFromString(color)!;
+        else b.ClearValue(BackgroundProperty);
+    }
+
+    private void HideWatched_Changed(object sender, RoutedEventArgs e)
+    {
+        var hide = HideWatchedToggle.IsChecked == true;
+        if (ProfileService.Current.HideWatched == hide) return;
+        ProfileService.Current.HideWatched = hide;
+        ProfileService.Save();
+        ApplyFilter();
+        if (_homeBuilt) RefreshPersonalRows();
+    }
+
+    /// <summary>Rangées de l'accueil qui dépendent du profil : Reprendre, chaînes récentes, Ma liste, Pour toi.</summary>
+    private void RefreshPersonalRows()
+    {
+        var history = ProfileService.Current.History;
+        SetRow(ContinueRow, ContinueScroll, ContinueList, history.Where(h => h.Kind != Section.Live).Take(20).ToList());
+        ContinueSource.Text = "Films et séries regardés récemment";
+        SetRow(RecentChannelsRow, RecentChannelsScroll, RecentChannelsList, history.Where(h => h.Kind == Section.Live).Take(15).ToList());
+        RecentChannelsSource.Text = "Pour zapper rapidement";
+
+        RefreshMyListRow();
+
+        var hide = ProfileService.Current.HideWatched;
+        var movies = _items.GetValueOrDefault(Section.Movies) ?? new();
+        var series = _items.GetValueOrDefault(Section.Series) ?? new();
+        var movieCats = (_categories.GetValueOrDefault(Section.Movies) ?? new()).ToDictionary(c => c.Id, c => c.Name);
+        var seriesCats = (_categories.GetValueOrDefault(Section.Series) ?? new()).ToDictionary(c => c.Id, c => c.Name);
+
+        var forMovies = RecommendationService.Suggest(movies);
+        var forSeries = RecommendationService.Suggest(series);
+        SetRow(ForYouMoviesRow, ForYouMoviesScroll, ForYouMoviesList, forMovies);
+        SetRow(ForYouSeriesRow, ForYouSeriesScroll, ForYouSeriesList, forSeries);
+        ForYouMoviesSource.Text = Tastes(RecommendationService.TopTastes(movies, movieCats));
+        ForYouSeriesSource.Text = Tastes(RecommendationService.TopTastes(series, seriesCats));
+        ForYouCta.Visibility = forMovies.Count == 0 && forSeries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        SetRow(RecentMoviesRow, RecentMoviesScroll, RecentMoviesList,
+            movies.Where(m => !hide || !m.IsWatched).OrderByDescending(m => m.Added).Take(24).ToList());
+        RecentMoviesSource.Text = "Derniers ajouts au catalogue";
+        SetRow(RecentSeriesRow, RecentSeriesScroll, RecentSeriesList,
+            series.Where(m => !hide || !m.IsWatched).OrderByDescending(m => m.Added).Take(24).ToList());
+        RecentSeriesSource.Text = "Dernières séries ajoutées ou mises à jour";
+    }
+
+    private static string Tastes(List<string> tastes) =>
+        tastes.Count > 0 ? "Parce que vous aimez : " + string.Join(", ", tastes) : "D'après vos goûts";
+
+    // ----- Écran « Personnaliser » -----
+
+    private void Personalize_Click(object sender, RoutedEventArgs e)
+    {
+        PersonalizeView.Visibility = Visibility.Visible;
+        FillPersonalize();
+    }
+
+    private void PersoTab_Checked(object sender, RoutedEventArgs e)
+    {
+        if (PersonalizeView?.Visibility == Visibility.Visible) FillPersonalize();
+    }
+
+    private void FillPersonalize()
+    {
+        var kind = PersoSeries.IsChecked == true ? Section.Series : Section.Movies;
+        var catalog = _items.GetValueOrDefault(kind) ?? new();
+        PersoList.ItemsSource = RecommendationService.Candidates(catalog);
+        UpdatePersoSubtitle();
+    }
+
+    private void UpdatePersoSubtitle()
+    {
+        var p = ProfileService.Current;
+        var n = p.Likes.Count + p.Dislikes.Count;
+        PersoSubtitle.Text = (n == 0
+            ? "Notez quelques titres que vous avez vus : plus vous en notez, plus les suggestions « Pour toi » sont justes."
+            : $"{n} titre{(n > 1 ? "s" : "")} noté{(n > 1 ? "s" : "")}. Continuez pour affiner vos suggestions.");
+    }
+
+    private void RateLike_Click(object sender, RoutedEventArgs e) => Rate(sender, 1);
+    private void RateDislike_Click(object sender, RoutedEventArgs e) => Rate(sender, -1);
+
+    private void Rate(object sender, int rating)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not MediaItem item) return;
+        SetRating(item, item.UserRating == rating ? 0 : rating);
+        UpdatePersoSubtitle();
+    }
+
+    private void RateWatched_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is MediaItem item) SetWatched(item, !item.IsWatched);
+    }
+
+    private void PersonalizeClose_Click(object sender, RoutedEventArgs e) => ClosePersonalize();
+
+    private void ClosePersonalize()
+    {
+        PersonalizeView.Visibility = Visibility.Collapsed;
+        PersoList.ItemsSource = null;
+        if (_homeBuilt) RefreshPersonalRows();
+    }
+
     // ===================== Favoris =====================
 
     private static string FavKey(MediaItem item) => $"{item.Kind}:{item.Id}";
@@ -1041,7 +1326,7 @@ public partial class MainWindow : Window
             favs.Add(FavKey(item));
         SettingsService.Save();
         if (item.Kind == _section && _items.ContainsKey(_section)) RefreshCategories(selectFirst: false);
-        if (_homeBuilt) RefreshMyListRow();
+        if (_homeBuilt) RefreshPersonalRows();
         UpdateFavButton();
     }
 
@@ -1064,6 +1349,8 @@ public partial class MainWindow : Window
         HideEpgCard();
         _player?.Close();
         _player = new PlayerWindow(playlist, index, isLive, liveInfo) { Owner = this };
+        _player.EntryStarted += OnEntryStarted;
+        _player.Progress += OnPlaybackProgress;
         _player.Closed += (s, _) => { if (ReferenceEquals(_player, s)) _player = null; Activate(); };
         _player.Show();
     }
@@ -1072,7 +1359,12 @@ public partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && DownloadsView.Visibility == Visibility.Visible)
+        if (e.Key == Key.Escape && PersonalizeView.Visibility == Visibility.Visible)
+        {
+            ClosePersonalize();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && DownloadsView.Visibility == Visibility.Visible)
         {
             DownloadsView.Visibility = Visibility.Collapsed;
             e.Handled = true;

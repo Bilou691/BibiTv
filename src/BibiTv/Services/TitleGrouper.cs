@@ -60,6 +60,7 @@ public static partial class TitleGrouper
         {
             foreach (var i in items)
             {
+                i.GroupKey = i.Id;
                 i.Variants = new List<MediaItem> { i };
                 i.CategoryIds = new HashSet<string> { i.CategoryId };
             }
@@ -102,6 +103,7 @@ public static partial class TitleGrouper
                 Added = variants.Max(v => v.Added),
                 TmdbId = variants.Select(v => v.TmdbId).FirstOrDefault(t => !string.IsNullOrEmpty(t) && t != "0"),
                 Variants = variants,
+                GroupKey = key,
                 CategoryIds = variants.Select(v => v.CategoryId).ToHashSet(),
             });
         }

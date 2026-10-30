@@ -9,7 +9,7 @@
     <AssemblyName>BibiTv</AssemblyName>
     <RootNamespace>BibiTv</RootNamespace>
     <Product>BibiTV</Product>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationIcon>Assets\BibiTv.ico</ApplicationIcon>
     <!-- Seule la version 64 bits de LibVLC est embarquée -->

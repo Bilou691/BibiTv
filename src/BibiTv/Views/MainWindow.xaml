@@ -27,6 +27,14 @@
                         </Border.Background>
                     </Border>
                     <Border CornerRadius="14" BorderThickness="1" BorderBrush="#14FFFFFF" />
+                    <Border Background="#E60A84FF" CornerRadius="10" Padding="7,2" Margin="8" HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Visibility="{Binding IsWatched, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE73E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10" Foreground="White"
+                                       VerticalAlignment="Center" Margin="0,0,4,0" />
+                            <TextBlock Text="VU" FontSize="10" FontWeight="Bold" Foreground="White" />
+                        </StackPanel>
+                    </Border>
                 </Grid>
                 <TextBlock Text="{Binding Title}" Margin="2,10,2,0" FontSize="13" FontWeight="Medium" Foreground="#E5E5EA"
                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
@@ -77,6 +85,10 @@
                             </Border.Background>
                         </Border>
                         <Border CornerRadius="14" BorderThickness="1" BorderBrush="#14FFFFFF" />
+                        <Border Background="#E60A84FF" CornerRadius="10" Padding="7,2" Margin="8" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                Visibility="{Binding Item.IsWatched, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="VU" FontSize="10" FontWeight="Bold" Foreground="White" />
+                        </Border>
                     </Grid>
                     <TextBlock Text="{Binding Item.Title}" Margin="2,10,2,0" FontSize="13" FontWeight="Medium" Foreground="#E5E5EA"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding Item.Title}" />
@@ -103,6 +115,104 @@
                                TextTrimming="CharacterEllipsis" />
                 </StackPanel>
             </Grid>
+        </DataTemplate>
+
+        <!-- Reprendre : affiche + barre de progression -->
+        <DataTemplate x:Key="HistoryTemplate" DataType="{x:Type svc:HistoryEntry}">
+            <StackPanel Width="168">
+                <Grid Width="168" Height="252">
+                    <Border CornerRadius="14" Background="{StaticResource Surface}" />
+                    <Border CornerRadius="14">
+                        <Border.Background>
+                            <ImageBrush ImageSource="{Binding ImageUrl, Converter={StaticResource PosterImage}}" Stretch="UniformToFill" />
+                        </Border.Background>
+                    </Border>
+                    <Border CornerRadius="0,0,14,14" VerticalAlignment="Bottom" Height="70">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#00000000" Offset="0" />
+                                <GradientStop Color="#D9000000" Offset="1" />
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    <Border Width="44" Height="44" CornerRadius="22" Background="#B3000000" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock Text="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Foreground="White"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="3,0,0,0" />
+                    </Border>
+                    <ProgressBar Style="{StaticResource SlimProgress}" Maximum="100" Value="{Binding Progress, Mode=OneWay}" Margin="12,0,12,12"
+                                 VerticalAlignment="Bottom" Visibility="{Binding HasProgress, Converter={StaticResource BoolToVis}}" />
+                    <Border CornerRadius="14" BorderThickness="1" BorderBrush="#14FFFFFF" />
+                </Grid>
+                <TextBlock Text="{Binding Title}" Margin="2,10,2,0" FontSize="13" FontWeight="Medium" Foreground="#E5E5EA"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                <TextBlock Text="{Binding Subtitle}" Margin="2,2,2,0" FontSize="12" Foreground="{StaticResource TextSecondary}"
+                           TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="HistoryLiveTemplate" DataType="{x:Type svc:HistoryEntry}">
+            <StackPanel Width="208">
+                <Border CornerRadius="14" Background="{StaticResource Surface}" Width="208" Height="117" BorderThickness="1" BorderBrush="#14FFFFFF">
+                    <Image Margin="26,18" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"
+                           Source="{Binding ImageUrl, Converter={StaticResource LogoImage}}" />
+                </Border>
+                <TextBlock Text="{Binding Title}" Margin="2,10,2,0" FontSize="13" FontWeight="Medium" Foreground="#E5E5EA"
+                           TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- Personnaliser : affiche + j'aime / je n'aime pas / vu -->
+        <DataTemplate x:Key="RateTemplate" DataType="{x:Type m:MediaItem}">
+            <StackPanel Width="150" Margin="0,0,18,22">
+                <Grid Width="150" Height="225">
+                    <Border CornerRadius="12" Background="{StaticResource Surface}">
+                        <TextBlock Text="{Binding Initial}" FontSize="48" FontWeight="Bold" Foreground="{StaticResource TextTertiary}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <Border CornerRadius="12">
+                        <Border.Background>
+                            <ImageBrush ImageSource="{Binding ImageUrl, Converter={StaticResource PosterImage}}" Stretch="UniformToFill" />
+                        </Border.Background>
+                    </Border>
+                </Grid>
+                <TextBlock Text="{Binding Title}" Margin="2,8,2,8" FontSize="12" FontWeight="Medium" Foreground="#E5E5EA"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button Content="&#xE8E1;" ToolTip="J'aime" Click="RateLike_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource ChoiceButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsLiked}" Value="True">
+                                        <Setter Property="Background" Value="#30D158" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="&#xE8E0;" ToolTip="Je n'aime pas" Margin="6,0" Click="RateDislike_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource ChoiceButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsDisliked}" Value="True">
+                                        <Setter Property="Background" Value="#FF453A" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="&#xE73E;" ToolTip="Déjà vu" Click="RateWatched_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource ChoiceButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsWatched}" Value="True">
+                                        <Setter Property="Background" Value="#0A84FF" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
         </DataTemplate>
 
         <Style x:Key="TileClickable" TargetType="ListBoxItem" BasedOn="{StaticResource TileItem}">
@@ -281,6 +391,29 @@
                         </StackPanel>
                     </Grid>
 
+                    <!-- Reprendre -->
+                    <Grid Margin="0,34,0,0" x:Name="ContinueRow">
+                        <StackPanel>
+                            <TextBlock Text="Reprendre" FontSize="22" FontWeight="Bold" />
+                            <TextBlock x:Name="ContinueSource" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Content="&#xE76B;" Style="{StaticResource SmallIconButton}" Tag="{Binding ElementName=ContinueScroll}" Click="RowLeft_Click" />
+                            <Button Content="&#xE76C;" Style="{StaticResource SmallIconButton}" Margin="8,0,0,0" Tag="{Binding ElementName=ContinueScroll}" Click="RowRight_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="ContinueScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="Row_PreviewMouseWheel" Margin="-10,4,-10,0">
+                        <ListBox x:Name="ContinueList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource TileClickable}"
+                                 ItemTemplate="{StaticResource HistoryTemplate}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                    </ScrollViewer>
+
                     <!-- Top 10 des films de la semaine -->
                     <Grid Margin="0,34,0,0" x:Name="TopMoviesRow">
                         <StackPanel>
@@ -327,6 +460,83 @@
                         </ListBox>
                     </ScrollViewer>
 
+                    <!-- Pour toi : invitation tant qu'aucun goût n'est connu -->
+                    <Border x:Name="ForYouCta" Margin="0,34,0,0" CornerRadius="20" Padding="28,24" Visibility="Collapsed">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#330A84FF" Offset="0" />
+                                <GradientStop Color="#33BF5AF2" Offset="1" />
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <Grid>
+                            <StackPanel>
+                                <TextBlock Text="Pour toi" FontSize="22" FontWeight="Bold" />
+                                <TextBlock Text="Dites-nous ce que vous aimez : BibiTV vous proposera des films et des séries qui vous ressemblent."
+                                           FontSize="14" Foreground="#D1D1D6" Margin="0,6,220,0" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button Content="Personnaliser" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Click="Personalize_Click" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Pour toi · Films -->
+                    <Grid Margin="0,34,0,0" x:Name="ForYouMoviesRow">
+                        <StackPanel>
+                            <TextBlock Text="Pour toi · Films" FontSize="22" FontWeight="Bold" />
+                            <TextBlock x:Name="ForYouMoviesSource" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Style="{StaticResource GhostButton}" Margin="0,0,10,0" Click="Personalize_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8E1;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <TextBlock Text="Personnaliser" />
+                                </StackPanel>
+                            </Button>
+                            <Button Content="&#xE76B;" Style="{StaticResource SmallIconButton}" Tag="{Binding ElementName=ForYouMoviesScroll}" Click="RowLeft_Click" />
+                            <Button Content="&#xE76C;" Style="{StaticResource SmallIconButton}" Margin="8,0,0,0" Tag="{Binding ElementName=ForYouMoviesScroll}" Click="RowRight_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="ForYouMoviesScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="Row_PreviewMouseWheel" Margin="-10,4,-10,0">
+                        <ListBox x:Name="ForYouMoviesList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource TileClickable}"
+                                 ItemTemplate="{StaticResource PosterTemplate}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                    </ScrollViewer>
+
+                    <!-- Pour toi · Séries -->
+                    <Grid Margin="0,34,0,0" x:Name="ForYouSeriesRow">
+                        <StackPanel>
+                            <TextBlock Text="Pour toi · Séries" FontSize="22" FontWeight="Bold" />
+                            <TextBlock x:Name="ForYouSeriesSource" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Style="{StaticResource GhostButton}" Margin="0,0,10,0" Click="Personalize_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8E1;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <TextBlock Text="Personnaliser" />
+                                </StackPanel>
+                            </Button>
+                            <Button Content="&#xE76B;" Style="{StaticResource SmallIconButton}" Tag="{Binding ElementName=ForYouSeriesScroll}" Click="RowLeft_Click" />
+                            <Button Content="&#xE76C;" Style="{StaticResource SmallIconButton}" Margin="8,0,0,0" Tag="{Binding ElementName=ForYouSeriesScroll}" Click="RowRight_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="ForYouSeriesScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="Row_PreviewMouseWheel" Margin="-10,4,-10,0">
+                        <ListBox x:Name="ForYouSeriesList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource TileClickable}"
+                                 ItemTemplate="{StaticResource PosterTemplate}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                    </ScrollViewer>
+
                     <!-- Top 10 des chaînes TV en France -->
                     <Grid Margin="0,34,0,0" x:Name="TopChannelsRow">
                         <StackPanel>
@@ -342,6 +552,29 @@
                                   PreviewMouseWheel="Row_PreviewMouseWheel" Margin="-10,4,-10,0">
                         <ListBox x:Name="TopChannelsList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource TileClickable}"
                                  ItemTemplate="{StaticResource RankedLiveTemplate}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                    </ScrollViewer>
+
+                    <!-- Chaînes regardées récemment -->
+                    <Grid Margin="0,34,0,0" x:Name="RecentChannelsRow">
+                        <StackPanel>
+                            <TextBlock Text="Chaînes regardées récemment" FontSize="22" FontWeight="Bold" />
+                            <TextBlock x:Name="RecentChannelsSource" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Content="&#xE76B;" Style="{StaticResource SmallIconButton}" Tag="{Binding ElementName=RecentChannelsScroll}" Click="RowLeft_Click" />
+                            <Button Content="&#xE76C;" Style="{StaticResource SmallIconButton}" Margin="8,0,0,0" Tag="{Binding ElementName=RecentChannelsScroll}" Click="RowRight_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="RecentChannelsScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="Row_PreviewMouseWheel" Margin="-10,4,-10,0">
+                        <ListBox x:Name="RecentChannelsList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource TileClickable}"
+                                 ItemTemplate="{StaticResource HistoryLiveTemplate}">
                             <ListBox.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <StackPanel Orientation="Horizontal" />
@@ -455,11 +688,16 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <StackPanel Orientation="Horizontal" Margin="12,6,0,6">
-                        <TextBlock x:Name="HeaderTitle" FontSize="30" FontWeight="Bold" />
-                        <TextBlock x:Name="HeaderCount" FontSize="15" Foreground="{StaticResource TextSecondary}"
-                                   VerticalAlignment="Bottom" Margin="12,0,0,6" />
-                    </StackPanel>
+                    <Grid Margin="12,6,10,6">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="HeaderTitle" FontSize="30" FontWeight="Bold" />
+                            <TextBlock x:Name="HeaderCount" FontSize="15" Foreground="{StaticResource TextSecondary}"
+                                       VerticalAlignment="Bottom" Margin="12,0,0,6" />
+                        </StackPanel>
+                        <ToggleButton x:Name="HideWatchedToggle" Content="Masquer les vus" Style="{StaticResource TogglePill}"
+                                      HorizontalAlignment="Right" VerticalAlignment="Center"
+                                      Checked="HideWatched_Changed" Unchecked="HideWatched_Changed" />
+                    </Grid>
 
                     <ListBox x:Name="PosterList" Grid.Row="1" Style="{StaticResource TileList}" ItemTemplate="{StaticResource PosterTemplate}"
                              KeyDown="TileList_KeyDown" />
@@ -594,6 +832,13 @@
                                     </StackPanel>
                                 </Button>
                                 <Button x:Name="FavButton" Style="{StaticResource SecondaryButton}" Margin="12,0,0,0" Click="Fav_Click" />
+                                <Button x:Name="WatchedButton" Style="{StaticResource SecondaryButton}" Margin="12,0,0,0" Click="DetailWatched_Click" />
+                                <Button x:Name="LikeButton" Style="{StaticResource SecondaryButton}" Margin="12,0,0,0" Padding="16,11"
+                                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Content="&#xE8E1;" ToolTip="J'aime"
+                                        Click="DetailLike_Click" />
+                                <Button x:Name="DislikeButton" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Padding="16,11"
+                                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Content="&#xE8E0;" ToolTip="Je n'aime pas"
+                                        Click="DetailDislike_Click" />
                                 <Button x:Name="DownloadButton" Style="{StaticResource SecondaryButton}" Margin="12,0,0,0" Click="DownloadMovie_Click">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="&#xE896;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14"
@@ -659,7 +904,13 @@
                                                 </Grid>
                                             </Border>
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center" MaxWidth="760" HorizontalAlignment="Left">
-                                                <TextBlock Text="{Binding Label}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Label}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                    <Border Background="#E60A84FF" CornerRadius="8" Padding="6,1" Margin="10,0,0,0" VerticalAlignment="Center"
+                                                            Visibility="{Binding IsWatched, Converter={StaticResource BoolToVis}}">
+                                                        <TextBlock Text="VU" FontSize="10" FontWeight="Bold" Foreground="White" />
+                                                    </Border>
+                                                </StackPanel>
                                                 <TextBlock Text="{Binding Duration}" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" />
                                                 <TextBlock Text="{Binding Plot}" FontSize="13" Foreground="#AEAEB2" Margin="0,6,0,0"
                                                            TextWrapping="Wrap" MaxHeight="40" TextTrimming="WordEllipsis" />
@@ -671,6 +922,45 @@
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>
+        </Grid>
+
+        <!-- ===================== PERSONNALISER ===================== -->
+        <Grid x:Name="PersonalizeView" Visibility="Collapsed" Background="#F20A0A0C">
+            <Grid Margin="56,36,40,28">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid>
+                    <StackPanel>
+                        <TextBlock Text="Vos goûts" FontSize="34" FontWeight="Bold" />
+                        <TextBlock x:Name="PersoSubtitle" FontSize="14" Foreground="{StaticResource TextSecondary}" Margin="0,6,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Content="Terminé" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Click="PersonalizeClose_Click" />
+                </Grid>
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,22,0,18">
+                    <Border Background="#B31C1C1E" CornerRadius="22" Padding="4">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="PersoMovies" Content="Films" GroupName="perso" Style="{StaticResource NavPill}" IsChecked="True"
+                                         Checked="PersoTab_Checked" />
+                            <RadioButton x:Name="PersoSeries" Content="Séries" GroupName="perso" Style="{StaticResource NavPill}" Checked="PersoTab_Checked" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="👍 j'aime   ·   👎 je n'aime pas   ·   ✓ déjà vu" FontSize="13" Foreground="{StaticResource TextSecondary}"
+                               VerticalAlignment="Center" Margin="20,0,0,0" />
+                </StackPanel>
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="PersoList" ItemTemplate="{StaticResource RateTemplate}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
         </Grid>
 
         <!-- ===================== TÉLÉCHARGEMENTS ===================== -->

@@ -8,7 +8,13 @@ using LibVLCSharp.Shared;
 
 namespace BibiTv.Views;
 
-public sealed record PlaylistEntry(string Title, string Subtitle, string Url);
+public sealed record PlaylistEntry(string Title, string Subtitle, string Url)
+{
+    /// <summary>Position de reprise (ms).</summary>
+    public long StartMs { get; init; }
+    /// <summary>Données de l'appelant (historique), renvoyées dans les événements de progression.</summary>
+    public object? Tag { get; init; }
+}
 
 public partial class PlayerWindow : Window
 {
@@ -33,6 +39,14 @@ public partial class PlayerWindow : Window
     private Point _lastMouse;
 
     private readonly Func<int, Task<string?>>? _liveInfo;
+    private readonly DispatcherTimer _progressTimer = new() { Interval = TimeSpan.FromSeconds(15) };
+    private long _lastTime, _lastLength;
+    private int _resumedIndex = -1;
+
+    /// <summary>Une entrée commence à être lue.</summary>
+    public event Action<PlaylistEntry>? EntryStarted;
+    /// <summary>Progression d'une entrée (position, durée en ms) : périodiquement, au changement et à la fermeture.</summary>
+    public event Action<PlaylistEntry, long, long>? Progress;
 
     public PlayerWindow(List<PlaylistEntry> playlist, int index, bool isLive, Func<int, Task<string?>>? liveInfo = null)
     {
@@ -48,6 +62,7 @@ public partial class PlayerWindow : Window
         VolumeBar.Value = SettingsService.Current.Volume;
 
         _hideTimer.Tick += (_, _) => HideChrome();
+        _progressTimer.Tick += (_, _) => ReportProgress();
         _osdTimer.Tick += (_, _) => { _osdTimer.Stop(); Fade(Osd, 0); };
 
         SourceInitialized += (_, _) => WindowHelper.UseDarkTitleBar(this);
@@ -64,7 +79,7 @@ public partial class PlayerWindow : Window
         _mp.Paused += (_, _) => Ui(() => PlayPauseButton.Content = "");
         _mp.Buffering += (_, a) => Ui(() => SetBuffering(a.Cache < 100f));
         _mp.TimeChanged += (_, a) => Ui(() => OnTime(a.Time));
-        _mp.LengthChanged += (_, a) => Ui(() => DurationText.Text = Format(a.Length));
+        _mp.LengthChanged += (_, a) => Ui(() => { _lastLength = a.Length; DurationText.Text = Format(a.Length); });
         _mp.EndReached += (_, _) => Ui(OnEndReached);
         _mp.EncounteredError += (_, _) => Ui(() => ShowError("Le flux n'a pas pu être ouvert. Il est peut-être hors ligne ou le nombre de connexions de l'abonnement est atteint."));
         Video.MediaPlayer = _mp;
@@ -101,9 +116,12 @@ public partial class PlayerWindow : Window
         PrevButton.IsEnabled = _index > 0;
         NextButton.IsEnabled = _index < _playlist.Count - 1;
 
+        _lastTime = _lastLength = 0;
         using var media = new Media(LibVlc, new Uri(entry.Url));
         _mp.Play(media);
         _ = ShowLiveInfoAsync(_index);
+        EntryStarted?.Invoke(entry);
+        if (!_isLive) _progressTimer.Start();
     }
 
     /// <summary>Affiche le programme en cours sous le nom de la chaîne.</summary>
@@ -130,12 +148,29 @@ public partial class PlayerWindow : Window
         _mp.Volume = (int)VolumeBar.Value;
         SetBuffering(false);
         if (!_isLive) SeekRow.Visibility = _mp.IsSeekable ? Visibility.Visible : Visibility.Collapsed;
+
+        // Reprise là où on s'était arrêté
+        var entry = _playlist[_index];
+        if (_resumedIndex != _index && entry.StartMs > 5000 && _mp.IsSeekable)
+        {
+            _resumedIndex = _index;
+            _mp.Time = entry.StartMs;
+            ShowOsd($"Reprise à {Format(entry.StartMs)}");
+        }
+        _resumedIndex = _index;
+    }
+
+    private void ReportProgress(bool finished = false)
+    {
+        if (_isLive || _lastLength <= 0) return;
+        Progress?.Invoke(_playlist[_index], finished ? _lastLength : _lastTime, _lastLength);
     }
 
     private void OnTime(long time)
     {
         if (_mp == null) return;
         if (time > 0) SetBuffering(false);
+        if (time > 0) _lastTime = time;
         if (_seeking) return;
         TimeText.Text = Format(time);
         SeekBar.Value = _mp.Position * 1000;
@@ -152,11 +187,14 @@ public partial class PlayerWindow : Window
         }
         else if (_index < _playlist.Count - 1)
         {
+            ReportProgress(finished: true);
             _index++; // épisode suivant
             PlayCurrent();
         }
         else
         {
+            ReportProgress(finished: true);
+            _lastLength = 0; // déjà signalé
             Close();
         }
     }
@@ -195,6 +233,7 @@ public partial class PlayerWindow : Window
     {
         var next = _index + delta;
         if (next < 0 || next >= _playlist.Count) return;
+        ReportProgress();
         _index = next;
         _liveRetries = 0;
         PlayCurrent();
@@ -400,6 +439,8 @@ public partial class PlayerWindow : Window
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (!_closing) ReportProgress();
+        _progressTimer.Stop();
         _closing = true;
         _hideTimer.Stop();
         _osdTimer.Stop();

@@ -2,7 +2,11 @@
 
 Lecteur IPTV **Xtream Codes** pour Windows, avec une interface épurée inspirée de l'Apple TV.
 
-- **Accueil** : à la une, Top 10 des films et des séries de la semaine, Top 10 des chaînes les plus regardées en France, Ma liste, nouveautés
+- **Accueil** : à la une, Reprendre, Top 10 des films et des séries de la semaine, Pour toi, Top 10 des chaînes les plus regardées en France, chaînes récentes, Ma liste, nouveautés
+- **Reprendre** : historique des films/séries/chaînes, reprise à la seconde près (et à l'épisode suivant pour les séries)
+- **Déjà vu** : pastille « VU » automatique (> 90 % regardé) ou manuelle, bouton « Masquer les vus »
+- **Pour toi** : 👍 / 👎 sur les fiches et écran « Personnaliser » ; suggestions de films et séries selon vos genres préférés
+- **Programme TV** : en cours / ensuite au survol d'une chaîne (guide EPG du fournisseur)
 - **En direct / Films / Séries** : classés selon les catégories du fournisseur
 - **Chaînes par marque** : Canal+, beIN Sports, RMC Sport, Eurosport, DAZN, Ligue 1+, L'Équipe, Infos… pour retrouver vite les matchs
 - **Jingle d'ouverture** silencieux avec le logo BibiTV (cliquer pour passer)
