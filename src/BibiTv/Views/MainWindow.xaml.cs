@@ -33,6 +33,10 @@ public partial class MainWindow : Window
     private bool _homeBuilt;
     private MediaItem? _heroItem;
     private CancellationTokenSource? _homeCts;
+    private readonly Dictionary<string, (DateTime fetched, List<EpgEntry> entries)> _epgCache = new();
+    private readonly DispatcherTimer _epgDelay = new() { Interval = TimeSpan.FromMilliseconds(220) };
+    private readonly DispatcherTimer _epgHide = new() { Interval = TimeSpan.FromMilliseconds(350) };
+    private MediaItem? _epgItem;
     private CancellationTokenSource? _updateCts;
 
     public MainWindow()
@@ -45,6 +49,9 @@ public partial class MainWindow : Window
         DownloadManager.Instance.Changed += UpdateDownloadBadge;
         DownloadManager.Instance.Items.CollectionChanged += (_, _) => UpdateDownloadBadge();
         UpdateDownloadBadge();
+
+        _epgDelay.Tick += async (_, _) => { _epgDelay.Stop(); await LoadEpgCardAsync(); };
+        _epgHide.Tick += (_, _) => { _epgHide.Stop(); HideEpgCard(); };
 
         SourceInitialized += (_, _) => WindowHelper.UseDarkTitleBar(this);
         Loaded += OnLoaded;
@@ -170,6 +177,7 @@ public partial class MainWindow : Window
 
     private void ShowView(bool home)
     {
+        HideEpgCard();
         _onHome = home;
         HomeView.Visibility = home ? Visibility.Visible : Visibility.Collapsed;
         CatalogView.Visibility = home ? Visibility.Collapsed : Visibility.Visible;
@@ -357,13 +365,16 @@ public partial class MainWindow : Window
 
     private void Open(MediaItem item, ItemsControl? source = null)
     {
+        HideEpgCard();
         if (item.Kind == Section.Live)
         {
             // Lecture directe, avec zapping possible dans la liste d'où vient la chaîne.
             var channels = source?.ItemsSource?.Cast<object>().Select(Unwrap).OfType<MediaItem>().Where(m => m.Kind == Section.Live).ToList();
             if (channels == null || !channels.Contains(item)) channels = new List<MediaItem> { item };
             var playlist = channels.Select(c => new PlaylistEntry(c.Title, "En direct", _client!.LiveUrl(c.Id))).ToList();
-            StartPlayer(playlist, Math.Max(0, channels.IndexOf(item)), isLive: true);
+            StartPlayer(playlist, Math.Max(0, channels.IndexOf(item)), isLive: true,
+                liveInfo: async i => (await GetEpgAsync(channels[i])).FirstOrDefault(x => x.IsNow) is { } now
+                    ? $"En direct  ·  {now.TimeRange}  ·  {now.Title}" : null);
         }
         else
         {
@@ -896,6 +907,120 @@ public partial class MainWindow : Window
         SplashView.BeginAnimation(OpacityProperty, fade);
     }
 
+    // ===================== Programme TV (EPG) =====================
+
+    private void Tile_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (Unwrap((sender as FrameworkElement)?.DataContext) is { Kind: Section.Live } item) ShowEpgFor(item);
+    }
+
+    private void Tile_MouseLeave(object sender, MouseEventArgs e)
+    {
+        // Si une chaîne est sélectionnée au clavier, on revient sur elle ; sinon on masque.
+        _epgHide.Stop();
+        _epgHide.Start();
+    }
+
+    private void Tile_Selected(object sender, RoutedEventArgs e)
+    {
+        if (sender is ListBoxItem { IsKeyboardFocusWithin: true } li && Unwrap(li.DataContext) is { Kind: Section.Live } item)
+            ShowEpgFor(item);
+    }
+
+    private void ShowEpgFor(MediaItem channel)
+    {
+        _epgHide.Stop();
+        if (_epgItem == channel && EpgCard.Visibility == Visibility.Visible) return;
+        _epgItem = channel;
+
+        EpgChannel.Text = channel.Title.ToUpperInvariant();
+        EpgLogo.Source = LoadImage(channel.ImageUrl, 160);
+        if (_epgCache.TryGetValue(channel.Id, out var c) && DateTime.Now - c.fetched < TimeSpan.FromMinutes(5))
+            FillEpgCard(c.entries);
+        else
+        {
+            EpgNowPanel.Visibility = EpgNextPanel.Visibility = Visibility.Collapsed;
+            EpgStatus.Text = "Chargement du programme…";
+            EpgStatus.Visibility = Visibility.Visible;
+            _epgDelay.Stop();
+            _epgDelay.Start(); // évite une requête par chaîne survolée en passant
+        }
+
+        if (EpgCard.Visibility != Visibility.Visible)
+        {
+            EpgCard.Visibility = Visibility.Visible;
+            EpgCard.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromSeconds(0.18)));
+        }
+    }
+
+    private void HideEpgCard()
+    {
+        _epgDelay.Stop();
+        _epgHide.Stop();
+        _epgItem = null;
+        if (EpgCard.Visibility != Visibility.Visible) return;
+        var fade = new DoubleAnimation(0, TimeSpan.FromSeconds(0.15));
+        fade.Completed += (_, _) => { if (_epgItem == null) EpgCard.Visibility = Visibility.Collapsed; };
+        EpgCard.BeginAnimation(OpacityProperty, fade);
+    }
+
+    private async Task LoadEpgCardAsync()
+    {
+        var channel = _epgItem;
+        if (channel == null) return;
+        var entries = await GetEpgAsync(channel);
+        if (_epgItem == channel) FillEpgCard(entries);
+    }
+
+    private async Task<List<EpgEntry>> GetEpgAsync(MediaItem channel)
+    {
+        if (_epgCache.TryGetValue(channel.Id, out var c) && DateTime.Now - c.fetched < TimeSpan.FromMinutes(5))
+            return c.entries.Where(x => x.End > DateTime.Now).ToList();
+        if (_client == null) return new();
+        try
+        {
+            var entries = await _client.GetShortEpgAsync(channel.Id);
+            _epgCache[channel.Id] = (DateTime.Now, entries);
+            return entries;
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
+    private void FillEpgCard(List<EpgEntry> entries)
+    {
+        var now = entries.FirstOrDefault(x => x.IsNow);
+        var next = entries.FirstOrDefault(x => x.Start >= (now?.End ?? DateTime.Now) && x != now);
+
+        EpgNowPanel.Visibility = now != null ? Visibility.Visible : Visibility.Collapsed;
+        if (now != null)
+        {
+            EpgNowTime.Text = $"{now.TimeRange}  ·  encore {Remaining(now.End)}";
+            EpgNowTitle.Text = now.Title;
+            EpgProgress.Value = now.Progress;
+            EpgNowDesc.Text = now.Description ?? "";
+            EpgNowDesc.Visibility = string.IsNullOrWhiteSpace(now.Description) ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        EpgNextPanel.Visibility = next != null ? Visibility.Visible : Visibility.Collapsed;
+        if (next != null)
+        {
+            EpgNextTime.Text = $"ENSUITE  {next.Start:HH:mm}";
+            EpgNextTitle.Text = next.Title;
+        }
+
+        EpgStatus.Visibility = now == null && next == null ? Visibility.Visible : Visibility.Collapsed;
+        EpgStatus.Text = "Pas de programme disponible pour cette chaîne.";
+    }
+
+    private static string Remaining(DateTime end)
+    {
+        var t = end - DateTime.Now;
+        return t.TotalHours >= 1 ? $"{(int)t.TotalHours} h {t.Minutes:00}" : $"{Math.Max(1, (int)Math.Ceiling(t.TotalMinutes))} min";
+    }
+
     // ===================== Favoris =====================
 
     private static string FavKey(MediaItem item) => $"{item.Kind}:{item.Id}";
@@ -933,11 +1058,12 @@ public partial class MainWindow : Window
 
     // ===================== Lecteur =====================
 
-    private void StartPlayer(List<PlaylistEntry> playlist, int index, bool isLive)
+    private void StartPlayer(List<PlaylistEntry> playlist, int index, bool isLive, Func<int, Task<string?>>? liveInfo = null)
     {
         if (playlist.Count == 0) return;
+        HideEpgCard();
         _player?.Close();
-        _player = new PlayerWindow(playlist, index, isLive) { Owner = this };
+        _player = new PlayerWindow(playlist, index, isLive, liveInfo) { Owner = this };
         _player.Closed += (s, _) => { if (ReferenceEquals(_player, s)) _player = null; Activate(); };
         _player.Show();
     }

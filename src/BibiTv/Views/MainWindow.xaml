@@ -108,6 +108,9 @@
         <Style x:Key="TileClickable" TargetType="ListBoxItem" BasedOn="{StaticResource TileItem}">
             <EventSetter Event="MouseLeftButtonUp" Handler="Tile_Click" />
             <EventSetter Event="MouseRightButtonUp" Handler="Tile_RightClick" />
+            <EventSetter Event="MouseEnter" Handler="Tile_MouseEnter" />
+            <EventSetter Event="MouseLeave" Handler="Tile_MouseLeave" />
+            <EventSetter Event="Selected" Handler="Tile_Selected" />
         </Style>
 
         <Style x:Key="EpisodeClickable" TargetType="ListBoxItem" BasedOn="{StaticResource EpisodeItem}">
@@ -470,6 +473,51 @@
                     </StackPanel>
                 </Grid>
             </Grid>
+
+            <!-- Programme en cours (survol ou flèches du clavier sur une chaîne) -->
+            <Border x:Name="EpgCard" Grid.Row="1" Width="440" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,30,26"
+                    Background="#F51C1C1E" CornerRadius="18" Padding="18,16" BorderBrush="#26FFFFFF" BorderThickness="1"
+                    IsHitTestVisible="False" Visibility="Collapsed" Opacity="0">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="40" ShadowDepth="8" Opacity="0.65" Color="Black" />
+                </Border.Effect>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="64" Height="64" CornerRadius="12" Background="{StaticResource Surface2}" VerticalAlignment="Top" Margin="0,0,16,0">
+                        <Image x:Name="EpgLogo" Margin="8" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
+                    </Border>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock x:Name="EpgChannel" FontSize="12" FontWeight="Bold" Foreground="{StaticResource TextSecondary}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <StackPanel x:Name="EpgNowPanel" Margin="0,8,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Border Background="#FF453A" CornerRadius="4" Padding="6,1" VerticalAlignment="Center">
+                                    <TextBlock Text="EN COURS" FontSize="10" FontWeight="Bold" Foreground="White" />
+                                </Border>
+                                <TextBlock x:Name="EpgNowTime" FontSize="12" Foreground="{StaticResource TextSecondary}" Margin="8,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock x:Name="EpgNowTitle" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0"
+                                       MaxHeight="48" TextTrimming="WordEllipsis" />
+                            <ProgressBar x:Name="EpgProgress" Style="{StaticResource SlimProgress}" Maximum="100" Margin="0,10,0,0" />
+                            <TextBlock x:Name="EpgNowDesc" FontSize="13" LineHeight="19" Foreground="#AEAEB2" TextWrapping="Wrap" Margin="0,10,0,0"
+                                       MaxHeight="57" TextTrimming="WordEllipsis" />
+                        </StackPanel>
+                        <Grid x:Name="EpgNextPanel" Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="EpgNextTime" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" Margin="0,0,10,0" />
+                            <TextBlock x:Name="EpgNextTitle" Grid.Column="1" FontSize="13" Foreground="#D1D1D6" TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                        <TextBlock x:Name="EpgStatus" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Grid>
+            </Border>
         </Grid>
 
         <!-- ===================== FICHE DÉTAIL ===================== -->

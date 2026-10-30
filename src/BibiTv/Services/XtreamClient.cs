@@ -265,6 +265,44 @@ public sealed class XtreamClient
         };
     }
 
+    /// <summary>Programmes en cours et à venir d'une chaîne (titres encodés en Base64 par l'API).</summary>
+    public async Task<List<EpgEntry>> GetShortEpgAsync(string streamId, int limit = 4, CancellationToken ct = default)
+    {
+        var root = await GetAsync("get_short_epg", $"&stream_id={streamId}&limit={limit}", ct).ConfigureAwait(false);
+        var list = new List<EpgEntry>();
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("epg_listings", out var listings)) return list;
+        foreach (var e in Array(listings))
+        {
+            var start = Long(Str(e, "start_timestamp"));
+            var stop = Long(Str(e, "stop_timestamp"));
+            if (start <= 0 || stop <= start) continue;
+            list.Add(new EpgEntry
+            {
+                Title = Clean(DecodeB64(Str(e, "title"))) ?? "",
+                Description = Clean(DecodeB64(Str(e, "description"))),
+                Start = DateTimeOffset.FromUnixTimeSeconds(start).LocalDateTime,
+                End = DateTimeOffset.FromUnixTimeSeconds(stop).LocalDateTime,
+            });
+        }
+        var now = DateTime.Now;
+        return list.Where(x => x.End > now && x.Title.Length > 0).OrderBy(x => x.Start).ToList();
+    }
+
+    private static string? DecodeB64(string? s)
+    {
+        if (string.IsNullOrEmpty(s) || s.Length % 4 != 0) return s;
+        try
+        {
+            // Décodage strict : un texte en clair qui ressemble à du Base64 (« Info ») donnerait du charabia.
+            var decoded = new System.Text.UTF8Encoding(false, true).GetString(Convert.FromBase64String(s));
+            return decoded.Any(c => char.IsControl(c) && c is not ('\n' or '\r' or '\t')) ? s : decoded;
+        }
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
+        {
+            return s; // déjà en clair
+        }
+    }
+
     // ---------- Helpers JSON ----------
 
     private static IEnumerable<JsonElement> Array(JsonElement e) =>

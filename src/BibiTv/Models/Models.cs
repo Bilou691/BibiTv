@@ -98,6 +98,19 @@ public sealed class SeriesInfo
     public List<Season> Seasons { get; init; } = new();
 }
 
+/// <summary>Programme TV (guide EPG).</summary>
+public sealed class EpgEntry
+{
+    public string Title { get; init; } = "";
+    public string? Description { get; init; }
+    public DateTime Start { get; init; }
+    public DateTime End { get; init; }
+
+    public string TimeRange => $"{Start:HH:mm} – {End:HH:mm}";
+    public bool IsNow => Start <= DateTime.Now && DateTime.Now < End;
+    public double Progress => End <= Start ? 0 : Math.Clamp((DateTime.Now - Start) / (End - Start) * 100, 0, 100);
+}
+
 public sealed class AccountInfo
 {
     public string Status { get; init; } = "";

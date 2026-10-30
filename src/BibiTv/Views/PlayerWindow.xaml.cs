@@ -32,8 +32,11 @@ public partial class PlayerWindow : Window
     private Window? _overlayWindow;
     private Point _lastMouse;
 
-    public PlayerWindow(List<PlaylistEntry> playlist, int index, bool isLive)
+    private readonly Func<int, Task<string?>>? _liveInfo;
+
+    public PlayerWindow(List<PlaylistEntry> playlist, int index, bool isLive, Func<int, Task<string?>>? liveInfo = null)
     {
+        _liveInfo = liveInfo;
         InitializeComponent();
         _playlist = playlist;
         _index = Math.Clamp(index, 0, playlist.Count - 1);
@@ -100,6 +103,22 @@ public partial class PlayerWindow : Window
 
         using var media = new Media(LibVlc, new Uri(entry.Url));
         _mp.Play(media);
+        _ = ShowLiveInfoAsync(_index);
+    }
+
+    /// <summary>Affiche le programme en cours sous le nom de la chaîne.</summary>
+    private async Task ShowLiveInfoAsync(int index)
+    {
+        if (_liveInfo == null) return;
+        try
+        {
+            var text = await _liveInfo(index);
+            if (text != null && index == _index && !_closing) SubtitleText.Text = text;
+        }
+        catch
+        {
+            // Programme indisponible : on garde « En direct ».
+        }
     }
 
     private void OnPlaying()
