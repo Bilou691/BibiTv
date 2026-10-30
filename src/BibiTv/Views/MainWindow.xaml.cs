@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -19,7 +21,8 @@ public partial class MainWindow : Window
     private readonly Dictionary<Section, List<Category>> _categories = new();
     private readonly DispatcherTimer _searchDebounce;
     private CancellationTokenSource? _detailCts;
-    private MediaItem? _detailItem;
+    private MediaItem? _detailItem;   // fiche (regroupement de versions)
+    private MediaItem? _variant;      // version sélectionnée
     private MovieInfo? _movieInfo;
     private SeriesInfo? _seriesInfo;
     private PlayerWindow? _player;
@@ -29,6 +32,11 @@ public partial class MainWindow : Window
         InitializeComponent();
         _searchDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); ApplyFilter(); };
+
+        DownloadList.ItemsSource = DownloadManager.Instance.Items;
+        DownloadManager.Instance.Changed += UpdateDownloadBadge;
+        DownloadManager.Instance.Items.CollectionChanged += (_, _) => UpdateDownloadBadge();
+        UpdateDownloadBadge();
 
         SourceInitialized += (_, _) => WindowHelper.UseDarkTitleBar(this);
         Loaded += OnLoaded;
@@ -145,7 +153,8 @@ public partial class MainWindow : Window
                 var itemsTask = client.GetItemsAsync(section);
                 await Task.WhenAll(catsTask, itemsTask);
                 if (client != _client) return; // déconnecté entre-temps
-                _items[section] = itemsTask.Result;
+                // Les doublons (4K / FHD / VOSTFR…) sont fusionnés en une seule affiche.
+                _items[section] = TitleGrouper.Group(itemsTask.Result, merge: section != Section.Live);
                 _categories[section] = catsTask.Result;
             }
             catch (Exception ex)
@@ -169,7 +178,7 @@ public partial class MainWindow : Window
     private void RefreshCategories(bool selectFirst)
     {
         var items = _items[_section];
-        var counts = items.GroupBy(i => i.CategoryId).ToDictionary(g => g.Key, g => g.Count());
+        var counts = items.SelectMany(i => i.CategoryIds).GroupBy(id => id).ToDictionary(g => g.Key, g => g.Count());
         var favCount = items.Count(IsFavorite);
 
         var list = new List<Category>();
@@ -227,7 +236,7 @@ public partial class MainWindow : Window
             {
                 null or Category.AllId => _section == Section.Live ? all : all.OrderByDescending(i => i.Added),
                 FavoritesId => all.Where(IsFavorite),
-                var id => all.Where(i => i.CategoryId == id),
+                var id => all.Where(i => i.CategoryIds.Contains(id)),
             };
             HeaderTitle.Text = cat?.Name ?? "";
         }
@@ -302,15 +311,10 @@ public partial class MainWindow : Window
 
     // ===================== Fiche détail =====================
 
-    private async Task ShowDetailAsync(MediaItem item)
+    private Task ShowDetailAsync(MediaItem item)
     {
-        if (_client == null) return;
-        _detailCts?.Cancel();
-        var cts = _detailCts = new CancellationTokenSource();
-
         _detailItem = item;
-        _movieInfo = null;
-        _seriesInfo = null;
+        _variant = null;
 
         DetailTitle.Text = item.Title;
         DetailMeta.Text = BuildMeta(item.Year, item.Genre, null, item.Rating);
@@ -318,38 +322,80 @@ public partial class MainWindow : Window
         DetailPeople.Text = "";
         DetailPoster.ImageSource = LoadImage(item.ImageUrl, 500);
         DetailBackdrop.Source = null;
+        DownloadButton.Visibility = item.Kind == Section.Movies ? Visibility.Visible : Visibility.Collapsed;
+        UpdateFavButton();
+        DetailView.Visibility = Visibility.Visible;
+        DetailScroll.ScrollToTop();
+
+        // Sélecteur de version (qualité / langue)
+        var catNames = _categories.TryGetValue(item.Kind, out var cats) ? cats.ToDictionary(c => c.Id, c => c.Name) : new();
+        var n = 0;
+        foreach (var v in item.Variants)
+        {
+            n++;
+            v.VersionLabel = v.Tag.Length > 0 ? v.Tag
+                : catNames.TryGetValue(v.CategoryId, out var cn) ? cn
+                : $"Version {n}";
+        }
+        // Si deux versions ont le même nom, on les numérote.
+        foreach (var dup in item.Variants.GroupBy(v => v.VersionLabel).Where(g => g.Count() > 1))
+        {
+            var k = 0;
+            foreach (var v in dup) v.VersionLabel = $"{v.VersionLabel} ({++k})";
+        }
+
+        VersionPanel.Visibility = item.Variants.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        VersionList.ItemsSource = item.Variants;
+        VersionList.SelectedIndex = -1;
+        VersionList.SelectedIndex = 0; // déclenche le chargement de la version
+        PlayButton.Focus();
+        return Task.CompletedTask;
+    }
+
+    private async void Version_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (VersionList.SelectedItem is MediaItem v) await LoadVariantAsync(v);
+    }
+
+    private async Task LoadVariantAsync(MediaItem variant)
+    {
+        if (_client == null || _detailItem == null) return;
+        _detailCts?.Cancel();
+        var cts = _detailCts = new CancellationTokenSource();
+        var item = _detailItem;
+
+        _variant = variant;
+        _movieInfo = null;
+        _seriesInfo = null;
         PlayLabel.Text = "Lecture";
-        PlayButton.IsEnabled = item.Kind == Section.Movies;
+        PlayButton.IsEnabled = variant.Kind == Section.Movies;
         SeriesPanel.Visibility = Visibility.Collapsed;
         SeasonList.ItemsSource = null;
         EpisodeList.ItemsSource = null;
-        UpdateFavButton();
         DetailLoading.Visibility = Visibility.Visible;
-        DetailView.Visibility = Visibility.Visible;
-        PlayButton.Focus();
 
         try
         {
-            if (item.Kind == Section.Movies)
+            if (variant.Kind == Section.Movies)
             {
-                var info = await _client.GetMovieInfoAsync(item.Id, cts.Token);
+                var info = await _client.GetMovieInfoAsync(variant.Id, cts.Token);
                 if (cts.IsCancellationRequested) return;
                 _movieInfo = info;
                 DetailMeta.Text = BuildMeta(Year(info.ReleaseDate) ?? item.Year, info.Genre, info.Duration, info.Rating ?? item.Rating);
                 if (!string.IsNullOrWhiteSpace(info.Plot)) DetailPlot.Text = info.Plot;
                 DetailPeople.Text = BuildPeople(info.Director, info.Cast);
-                DetailBackdrop.Source = LoadImage(info.Backdrop, 1600);
+                if (LoadImage(info.Backdrop, 1600) is { } bd) DetailBackdrop.Source = bd;
             }
             else
             {
-                var info = await _client.GetSeriesInfoAsync(item.Id, cts.Token);
+                var info = await _client.GetSeriesInfoAsync(variant.Id, cts.Token);
                 if (cts.IsCancellationRequested) return;
                 _seriesInfo = info;
                 DetailMeta.Text = BuildMeta(Year(info.ReleaseDate) ?? item.Year, info.Genre ?? item.Genre,
-                    info.Seasons.Count switch { 0 => null, 1 => "1 saison", var n => $"{n} saisons" }, item.Rating);
+                    info.Seasons.Count switch { 0 => null, 1 => "1 saison", var c => $"{c} saisons" }, item.Rating);
                 if (!string.IsNullOrWhiteSpace(info.Plot)) DetailPlot.Text = info.Plot;
                 DetailPeople.Text = BuildPeople(null, info.Cast);
-                DetailBackdrop.Source = LoadImage(info.Backdrop, 1600);
+                if (LoadImage(info.Backdrop, 1600) is { } bd) DetailBackdrop.Source = bd;
 
                 if (info.Seasons.Count > 0)
                 {
@@ -361,7 +407,7 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    DetailPeople.Text += (DetailPeople.Text.Length > 0 ? "\n\n" : "") + "Aucun épisode disponible.";
+                    DetailPeople.Text += (DetailPeople.Text.Length > 0 ? "\n\n" : "") + "Aucun épisode disponible pour cette version.";
                 }
             }
         }
@@ -390,11 +436,12 @@ public partial class MainWindow : Window
 
     private void Play_Click(object sender, RoutedEventArgs e)
     {
-        if (_client == null || _detailItem == null) return;
-        if (_detailItem.Kind == Section.Movies)
+        if (_client == null || _detailItem == null || _variant == null) return;
+        if (_variant.Kind == Section.Movies)
         {
-            var ext = _movieInfo?.Extension ?? _detailItem.Extension;
-            StartPlayer(new List<PlaylistEntry> { new(_detailItem.Title, DetailMeta.Text, _client.MovieUrl(_detailItem.Id, ext)) }, 0, isLive: false);
+            var ext = _variant.Extension ?? _movieInfo?.Extension;
+            var subtitle = string.Join("   ·   ", new[] { _variant.VersionLabel, DetailMeta.Text }.Where(x => !string.IsNullOrWhiteSpace(x)));
+            StartPlayer(new List<PlaylistEntry> { new(_detailItem.Title, subtitle, _client.MovieUrl(_variant.Id, ext)) }, 0, isLive: false);
         }
         else if (_seriesInfo?.Seasons.FirstOrDefault()?.Episodes.FirstOrDefault() is { } first)
         {
@@ -422,19 +469,132 @@ public partial class MainWindow : Window
         DetailView.Visibility = Visibility.Collapsed;
         DetailBackdrop.Source = null;
         DetailPoster.ImageSource = null;
+        VersionList.ItemsSource = null;
         _detailItem = null;
+        _variant = null;
     }
+
+    // ===================== Téléchargements =====================
+
+    private void DownloadMovie_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client == null || _detailItem == null || _variant == null || _variant.Kind != Section.Movies) return;
+        var ext = _variant.Extension ?? _movieInfo?.Extension ?? "mp4";
+        var name = DownloadManager.SafeName(_detailItem.Title + (_detailItem.Year is { } y ? $" ({y})" : "")
+                                            + (_variant.Tag.Length > 0 ? $" {_variant.Tag}" : ""));
+        DownloadManager.Instance.Enqueue(name, _client.MovieUrl(_variant.Id, ext), Path.Combine("Films", $"{name}.{ext}"));
+        ShowDownloads();
+    }
+
+    private void DownloadEpisode_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is Episode ep)
+        {
+            EnqueueEpisode(ep);
+            ShowDownloads();
+        }
+    }
+
+    private void DownloadSeason_Click(object sender, RoutedEventArgs e)
+    {
+        if (SeasonList.SelectedItem is not Season season) return;
+        foreach (var ep in season.Episodes) EnqueueEpisode(ep);
+        ShowDownloads();
+    }
+
+    private void EnqueueEpisode(Episode ep)
+    {
+        if (_client == null || _detailItem == null) return;
+        var series = DownloadManager.SafeName(_detailItem.Title);
+        var name = DownloadManager.SafeName($"{_detailItem.Title} S{ep.Season:00}E{ep.Number:00}"
+                                            + (string.IsNullOrWhiteSpace(ep.Title) || ep.Title.Contains(_detailItem.Title) ? "" : $" - {ep.Title}"));
+        var ext = string.IsNullOrWhiteSpace(ep.Extension) ? "mp4" : ep.Extension;
+        DownloadManager.Instance.Enqueue(name, _client.EpisodeUrl(ep.Id, ext),
+            Path.Combine("Séries", series, $"Saison {ep.Season:00}", $"{name}.{ext}"));
+    }
+
+    private void Downloads_Click(object sender, RoutedEventArgs e) => ShowDownloads();
+
+    private void ShowDownloads()
+    {
+        DownloadFolderText.Text = DownloadManager.Folder;
+        DownloadsView.Visibility = Visibility.Visible;
+    }
+
+    private void DownloadsClose_Click(object sender, RoutedEventArgs e) => DownloadsView.Visibility = Visibility.Collapsed;
+
+    private void UpdateDownloadBadge()
+    {
+        var active = DownloadManager.Instance.ActiveCount;
+        DownloadBadge.Visibility = active > 0 ? Visibility.Visible : Visibility.Collapsed;
+        DownloadBadgeText.Text = active.ToString();
+        DownloadsEmpty.Visibility = DownloadManager.Instance.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static DownloadItem? DownloadOf(object sender) => (sender as FrameworkElement)?.DataContext as DownloadItem;
+
+    private void DownloadCancel_Click(object sender, RoutedEventArgs e)
+    {
+        if (DownloadOf(sender) is { } d) DownloadManager.Instance.Cancel(d);
+    }
+
+    private void DownloadRetry_Click(object sender, RoutedEventArgs e)
+    {
+        if (DownloadOf(sender) is { } d) DownloadManager.Instance.Retry(d);
+    }
+
+    private void DownloadPlay_Click(object sender, RoutedEventArgs e)
+    {
+        if (DownloadOf(sender) is not { } d || !File.Exists(d.FilePath)) return;
+        DownloadsView.Visibility = Visibility.Collapsed;
+        StartPlayer(new List<PlaylistEntry> { new(d.Title, "Fichier téléchargé", new Uri(d.FilePath).AbsoluteUri) }, 0, isLive: false);
+    }
+
+    private void DownloadOpenFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (DownloadOf(sender) is { } d && File.Exists(d.FilePath))
+            Process.Start("explorer.exe", $"/select,\"{d.FilePath}\"");
+    }
+
+    private void DownloadsOpenRoot_Click(object sender, RoutedEventArgs e)
+    {
+        Directory.CreateDirectory(DownloadManager.Folder);
+        Process.Start("explorer.exe", $"\"{DownloadManager.Folder}\"");
+    }
+
+    private void DownloadsChangeFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Dossier de téléchargement",
+            InitialDirectory = Directory.Exists(DownloadManager.Folder) ? DownloadManager.Folder : null,
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        SettingsService.Current.DownloadFolder = dlg.FolderName;
+        SettingsService.Save();
+        DownloadFolderText.Text = DownloadManager.Folder;
+    }
+
+    private void DownloadsClear_Click(object sender, RoutedEventArgs e) => DownloadManager.Instance.ClearFinished();
 
     // ===================== Favoris =====================
 
     private static string FavKey(MediaItem item) => $"{item.Kind}:{item.Id}";
 
-    private static bool IsFavorite(MediaItem item) => SettingsService.Current.Favorites.Contains(FavKey(item));
+    /// <summary>Une fiche est en favori si l'une de ses versions l'est.</summary>
+    private static bool IsFavorite(MediaItem item)
+    {
+        var favs = SettingsService.Current.Favorites;
+        return item.Variants.Count == 0 ? favs.Contains(FavKey(item)) : item.Variants.Any(v => favs.Contains(FavKey(v)));
+    }
 
     private void ToggleFavorite(MediaItem item)
     {
         var favs = SettingsService.Current.Favorites;
-        if (!favs.Remove(FavKey(item))) favs.Add(FavKey(item));
+        if (IsFavorite(item))
+            foreach (var v in item.Variants.Append(item)) favs.Remove(FavKey(v));
+        else
+            favs.Add(FavKey(item));
         SettingsService.Save();
         if (item.Kind == _section) RefreshCategories(selectFirst: false);
         UpdateFavButton();
@@ -466,7 +626,12 @@ public partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && DetailView.Visibility == Visibility.Visible)
+        if (e.Key == Key.Escape && DownloadsView.Visibility == Visibility.Visible)
+        {
+            DownloadsView.Visibility = Visibility.Collapsed;
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && DetailView.Visibility == Visibility.Visible)
         {
             CloseDetail();
             e.Handled = true;

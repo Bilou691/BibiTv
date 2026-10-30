@@ -13,6 +13,7 @@
             <local:ImageUrlConverter x:Key="LogoImage" DecodeWidth="240" />
             <local:ImageUrlConverter x:Key="BackdropImage" DecodeWidth="1600" />
             <local:NullToVisibilityConverter x:Key="NullToVisible" />
+            <BooleanToVisibilityConverter x:Key="BoolToVis" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

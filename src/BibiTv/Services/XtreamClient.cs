@@ -64,11 +64,21 @@ public sealed class XtreamClient
         if (action != null) url += $"&action={action}";
         url += extra;
 
-        using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        resp.EnsureSuccessStatusCode();
-        await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
-        return doc.RootElement.Clone();
+        // HttpClient.Timeout ne couvre pas la lecture du corps : on borne l'appel complet.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromMinutes(2));
+        try
+        {
+            using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+            resp.EnsureSuccessStatusCode();
+            await using var stream = await resp.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token).ConfigureAwait(false);
+            return doc.RootElement.Clone();
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new XtreamException("Le serveur met trop de temps à répondre. Réessayez dans un instant.");
+        }
     }
 
     public async Task<AccountInfo> AuthenticateAsync(CancellationToken ct = default)

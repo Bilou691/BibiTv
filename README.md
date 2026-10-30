@@ -4,6 +4,8 @@ Lecteur IPTV **Xtream Codes** pour Windows, avec une interface épurée inspiré
 
 - **En direct / Films / Séries** : trois onglets, classés selon les catégories du fournisseur
 - **Récemment ajoutés** : les films et séries triés par date d'ajout
+- **Doublons fusionnés** : « Verity (2026) 4K MULTI », « FHD MULTI » et « SUBT AR » deviennent une seule affiche ; la version (qualité / langue) se choisit sur la fiche
+- **Téléchargements** : films, épisodes ou saisons entières sur le PC (dossier `Vidéos\BibiTV` par défaut, modifiable), avec suivi de la progression
 - **Fiche détail** : affiche, fond, synopsis, genre, durée, note, casting
 - **Séries** : saisons et épisodes ; l'épisode suivant se lance tout seul
 - **Ma liste** : favoris (bouton sur la fiche, ou clic droit sur une tuile)
@@ -63,6 +65,8 @@ src/BibiTv/
 ├── Models/Models.cs            Catégories, films, séries, épisodes
 ├── Services/XtreamClient.cs    API player_api.php (parsing tolérant aux panels capricieux)
 ├── Services/SettingsService.cs Réglages + mot de passe chiffré DPAPI
+├── Services/TitleGrouper.cs    Fusion des doublons (4K, FHD, VOSTFR…)
+├── Services/DownloadManager.cs File de téléchargements
 ├── Themes/Styles.xaml          Thème sombre façon tvOS
 ├── Views/MainWindow.*          Connexion, navigation, fiche détail
 └── Views/PlayerWindow.*        Lecteur LibVLC plein écran

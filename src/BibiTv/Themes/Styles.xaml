@@ -14,10 +14,8 @@
 
     <FontFamily x:Key="AppFont">Segoe UI Variable Display, Segoe UI</FontFamily>
 
-    <Style TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{StaticResource AppFont}" />
-        <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
-    </Style>
+    <!-- Pas de style implicite sur TextBlock : il écraserait la couleur et la police
+         héritées des boutons (texte blanc sur fond blanc, icônes en carrés). -->
 
     <!-- ===== Barre de défilement fine ===== -->
     <Style x:Key="ScrollThumb" TargetType="Thumb">
@@ -224,7 +222,7 @@
         </Setter>
     </Style>
 
-    <Style x:Key="FieldLabel" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+    <Style x:Key="FieldLabel" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Margin" Value="4,14,0,6" />
@@ -424,6 +422,53 @@
                             <Thumb Style="{StaticResource SeekThumb}" />
                         </Track.Thumb>
                     </Track>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Barre de progression des téléchargements -->
+    <Style x:Key="SlimProgress" TargetType="ProgressBar">
+        <Setter Property="Height" Value="4" />
+        <Setter Property="Foreground" Value="#F5F5F7" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Grid>
+                        <Border x:Name="PART_Track" CornerRadius="2" Background="#33FFFFFF" />
+                        <Border x:Name="PART_Indicator" CornerRadius="2" Background="{TemplateBinding Foreground}" HorizontalAlignment="Left" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsIndeterminate" Value="True">
+                            <Setter TargetName="PART_Indicator" Property="Opacity" Value="0.35" />
+                            <Setter TargetName="PART_Indicator" Property="HorizontalAlignment" Value="Stretch" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Petit bouton icône (liste d'épisodes, téléchargements) -->
+    <Style x:Key="SmallIconButton" TargetType="Button">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+        <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="Width" Value="38" />
+        <Setter Property="Height" Value="38" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bd" CornerRadius="19" Background="#1FFFFFFF">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="#F5F5F7" />
+                            <Setter Property="Foreground" Value="#0A0A0C" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

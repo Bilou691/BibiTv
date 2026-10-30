@@ -13,6 +13,7 @@ public sealed class AppSettings
     public string? ProtectedPassword { get; set; }
     public int Volume { get; set; } = 80;
     public List<string> Favorites { get; set; } = new();
+    public string? DownloadFolder { get; set; }
 }
 
 /// <summary>Sauvegarde des réglages dans %APPDATA%\BibiTv\settings.json.</summary>

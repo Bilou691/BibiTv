@@ -26,11 +26,20 @@ public sealed class MediaItem
     public string? Genre { get; init; }
     public long Added { get; init; }
 
+    /// <summary>Étiquette de version extraite du titre (« 4K MULTI », « SUBT AR »…).</summary>
+    public string Tag { get; set; } = "";
+    /// <summary>Nom affiché dans le sélecteur de version de la fiche.</summary>
+    public string VersionLabel { get; set; } = "";
+    /// <summary>Toutes les versions regroupées sous cette affiche (elle-même incluse).</summary>
+    public List<MediaItem> Variants { get; set; } = new();
+    public HashSet<string> CategoryIds { get; set; } = new();
+
     public string Initial => string.IsNullOrWhiteSpace(Title) ? "?" : Title.Trim()[..1].ToUpperInvariant();
 
     public string Subtitle => Kind == Section.Live
         ? ""
-        : string.Join("  ·  ", new[] { Year, FormatRating(Rating) }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        : string.Join("  ·  ", new[] { Year, FormatRating(Rating), Variants.Count > 1 ? $"{Variants.Count} versions" : null }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
 
     internal static string? FormatRating(string? rating)
     {

@@ -3,9 +3,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:m="clr-namespace:BibiTv.Models"
         xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
+        xmlns:svc="clr-namespace:BibiTv.Services"
         Title="BibiTV" Width="1440" Height="900" MinWidth="960" MinHeight="620"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource Bg}"
+        Foreground="{StaticResource TextPrimary}"
+        FontFamily="{StaticResource AppFont}"
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True">
 
@@ -158,7 +161,18 @@
                                      TextChanged="Search_TextChanged" />
                         </Grid>
                     </Border>
-                    <Button Content="Déconnexion" Style="{StaticResource GhostButton}" Margin="10,0,0,0" Click="Logout_Click" />
+                    <Button Style="{StaticResource GhostButton}" Margin="10,0,0,0" Click="Downloads_Click" ToolTip="Téléchargements">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE896;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock Text="Téléchargements" />
+                            <Border x:Name="DownloadBadge" Background="#0A84FF" CornerRadius="9" MinWidth="18" Height="18" Margin="8,0,0,0"
+                                    Padding="5,0" Visibility="Collapsed">
+                                <TextBlock x:Name="DownloadBadgeText" Foreground="White" FontSize="11" FontWeight="Bold"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                        </StackPanel>
+                    </Button>
+                    <Button Content="Déconnexion" Style="{StaticResource GhostButton}" Margin="4,0,0,0" Click="Logout_Click" />
                 </StackPanel>
             </Grid>
 
@@ -234,10 +248,18 @@
                 </Rectangle.Fill>
             </Rectangle>
 
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ScrollViewer x:Name="DetailScroll" VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="64,28,64,48">
-                    <Button Content="‹  Retour" Style="{StaticResource GhostButton}" HorizontalAlignment="Left" FontSize="15"
-                            Margin="-12,0,0,30" Click="DetailBack_Click" />
+                    <Grid Margin="-12,0,0,30">
+                        <Button Content="‹  Retour" Style="{StaticResource GhostButton}" HorizontalAlignment="Left" FontSize="15"
+                                Click="DetailBack_Click" />
+                        <Button Style="{StaticResource GhostButton}" HorizontalAlignment="Right" Click="Downloads_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE896;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <TextBlock Text="Téléchargements" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
 
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -259,6 +281,17 @@
                         <StackPanel Grid.Column="1" Margin="48,6,0,0" MaxWidth="780" HorizontalAlignment="Left">
                             <TextBlock x:Name="DetailTitle" FontSize="44" FontWeight="Bold" TextWrapping="Wrap" />
                             <TextBlock x:Name="DetailMeta" FontSize="15" Foreground="{StaticResource TextSecondary}" Margin="0,10,0,0" TextWrapping="Wrap" />
+                            <StackPanel x:Name="VersionPanel" Margin="0,22,0,0" Visibility="Collapsed">
+                                <TextBlock Text="VERSION" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextSecondary}" Margin="2,0,0,8" />
+                                <ListBox x:Name="VersionList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource PillItem}"
+                                         DisplayMemberPath="VersionLabel" SelectionChanged="Version_SelectionChanged">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                </ListBox>
+                            </StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,26,0,0">
                                 <Button x:Name="PlayButton" Style="{StaticResource PrimaryButton}" Click="Play_Click" MinWidth="170">
                                     <StackPanel Orientation="Horizontal">
@@ -268,6 +301,13 @@
                                     </StackPanel>
                                 </Button>
                                 <Button x:Name="FavButton" Style="{StaticResource SecondaryButton}" Margin="12,0,0,0" Click="Fav_Click" />
+                                <Button x:Name="DownloadButton" Style="{StaticResource SecondaryButton}" Margin="12,0,0,0" Click="DownloadMovie_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE896;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14"
+                                                   VerticalAlignment="Center" Margin="0,0,10,0" />
+                                        <TextBlock Text="Télécharger" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                             <TextBlock x:Name="DetailPlot" FontSize="16" LineHeight="25" Foreground="#D1D1D6" TextWrapping="Wrap" Margin="0,28,0,0" />
                             <TextBlock x:Name="DetailPeople" FontSize="13" LineHeight="21" Foreground="{StaticResource TextSecondary}"
@@ -279,6 +319,11 @@
 
                     <!-- Saisons / épisodes -->
                     <StackPanel x:Name="SeriesPanel" Margin="0,44,0,0" Visibility="Collapsed">
+                        <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
                         <ListBox x:Name="SeasonList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource PillItem}"
                                  DisplayMemberPath="Label" SelectionChanged="Season_SelectionChanged">
                             <ListBox.ItemsPanel>
@@ -287,6 +332,15 @@
                                 </ItemsPanelTemplate>
                             </ListBox.ItemsPanel>
                         </ListBox>
+                        <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Padding="18,8" FontSize="14" VerticalAlignment="Top"
+                                Click="DownloadSeason_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE896;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13"
+                                           VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <TextBlock Text="Télécharger la saison" />
+                            </StackPanel>
+                        </Button>
+                        </Grid>
 
                             <ListBox x:Name="EpisodeList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource EpisodeClickable}"
                                      Margin="-10,18,0,0">
@@ -296,7 +350,10 @@
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="224" />
                                                 <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
+                                            <Button Grid.Column="2" Content="&#xE896;" Style="{StaticResource SmallIconButton}" Margin="16,0,6,0"
+                                                    VerticalAlignment="Center" ToolTip="Télécharger cet épisode" Click="DownloadEpisode_Click" />
                                             <Border Width="208" Height="117" CornerRadius="12" Background="{StaticResource Surface}" HorizontalAlignment="Left">
                                                 <Grid>
                                                     <TextBlock Text="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="22"
@@ -323,19 +380,84 @@
             </ScrollViewer>
         </Grid>
 
+        <!-- ===================== TÉLÉCHARGEMENTS ===================== -->
+        <Grid x:Name="DownloadsView" Visibility="Collapsed">
+            <Rectangle Fill="#99000000" MouseLeftButtonDown="DownloadsClose_Click" />
+            <Border Width="460" HorizontalAlignment="Right" Background="#FF141416" BorderBrush="#1FFFFFFF" BorderThickness="1,0,0,0">
+                <Grid Margin="24,24,16,20">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid>
+                        <TextBlock Text="Téléchargements" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" />
+                        <Button Content="&#xE8BB;" Style="{StaticResource SmallIconButton}" FontSize="12" HorizontalAlignment="Right"
+                                ToolTip="Fermer" Click="DownloadsClose_Click" />
+                    </Grid>
+                    <TextBlock Grid.Row="1" x:Name="DownloadFolderText" FontSize="12" Foreground="{StaticResource TextSecondary}"
+                               Margin="0,8,8,16" TextTrimming="CharacterEllipsis" />
+
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="DownloadList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type svc:DownloadItem}">
+                                    <Border Background="{StaticResource Surface}" CornerRadius="14" Padding="16,14" Margin="0,0,8,10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding FilePath}" />
+                                                <TextBlock Text="{Binding Status}" FontSize="12" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,8" />
+                                                <ProgressBar Style="{StaticResource SlimProgress}" Maximum="100" Value="{Binding Progress, Mode=OneWay}"
+                                                             IsIndeterminate="{Binding Indeterminate, Mode=OneWay}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                                                <Button Content="&#xE768;" Style="{StaticResource SmallIconButton}" ToolTip="Lire le fichier"
+                                                        Visibility="{Binding IsDone, Converter={StaticResource BoolToVis}}" Click="DownloadPlay_Click" />
+                                                <Button Content="&#xE838;" Style="{StaticResource SmallIconButton}" Margin="6,0,0,0" ToolTip="Afficher dans le dossier"
+                                                        Visibility="{Binding IsDone, Converter={StaticResource BoolToVis}}" Click="DownloadOpenFolder_Click" />
+                                                <Button Content="&#xE72C;" Style="{StaticResource SmallIconButton}" ToolTip="Réessayer"
+                                                        Visibility="{Binding CanRetry, Converter={StaticResource BoolToVis}}" Click="DownloadRetry_Click" />
+                                                <Button Content="&#xE711;" Style="{StaticResource SmallIconButton}" ToolTip="Annuler"
+                                                        Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}" Click="DownloadCancel_Click" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock x:Name="DownloadsEmpty" Grid.Row="2" Text="Aucun téléchargement.&#x0a;Utilisez le bouton Télécharger sur la fiche d'un film ou d'un épisode."
+                               Foreground="{StaticResource TextSecondary}" FontSize="14" TextWrapping="Wrap" TextAlignment="Center"
+                               VerticalAlignment="Center" Margin="20,0" />
+
+                    <WrapPanel Grid.Row="3" Margin="0,12,0,0">
+                        <Button Content="Ouvrir le dossier" Style="{StaticResource GhostButton}" Click="DownloadsOpenRoot_Click" />
+                        <Button Content="Changer de dossier" Style="{StaticResource GhostButton}" Click="DownloadsChangeFolder_Click" />
+                        <Button Content="Effacer les terminés" Style="{StaticResource GhostButton}" Click="DownloadsClear_Click" />
+                    </WrapPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
         <!-- ===================== CHARGEMENT ===================== -->
         <Grid x:Name="LoadingView" Background="#B30A0A0C" Visibility="Collapsed">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Ellipse Width="44" Height="44" StrokeThickness="4" StrokeDashArray="18 30" StrokeDashCap="Round"
                          RenderTransformOrigin="0.5,0.5" Stroke="#F5F5F7">
                     <Ellipse.RenderTransform>
-                        <RotateTransform x:Name="SpinnerRotate" />
+                        <RotateTransform />
                     </Ellipse.RenderTransform>
                     <Ellipse.Triggers>
                         <EventTrigger RoutedEvent="Loaded">
                             <BeginStoryboard>
                                 <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetName="SpinnerRotate" Storyboard.TargetProperty="Angle"
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
                                                      From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever" />
                                 </Storyboard>
                             </BeginStoryboard>
