@@ -9,11 +9,22 @@
     <AssemblyName>BibiTv</AssemblyName>
     <RootNamespace>BibiTv</RootNamespace>
     <Product>BibiTV</Product>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationIcon>Assets\BibiTv.ico</ApplicationIcon>
     <!-- Seule la version 64 bits de LibVLC est embarquée -->
     <VlcWindowsX86Enabled>false</VlcWindowsX86Enabled>
   </PropertyGroup>
+
+  <!-- Clé TMDB injectée à la compilation (dotnet publish -p:TmdbKey=...), jamais commitée -->
+  <ItemGroup Condition="'$(TmdbKey)' != ''">
+    <AssemblyMetadata Include="TmdbKey" Value="$(TmdbKey)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\BibiTv.png" />
+    <Resource Include="Assets\BibiTv.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="LibVLCSharp.WPF" Version="3.9.0" />

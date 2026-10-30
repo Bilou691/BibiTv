@@ -170,6 +170,7 @@ public sealed class XtreamClient
                     Year = Year(Str(e, "year") ?? Str(e, "release_date")),
                     Extension = Str(e, "container_extension"),
                     Added = Long(Str(e, "added")),
+                    TmdbId = Str(e, "tmdb") ?? Str(e, "tmdb_id"),
                 },
                 _ => new MediaItem
                 {
@@ -183,6 +184,7 @@ public sealed class XtreamClient
                     Plot = Str(e, "plot"),
                     Genre = Str(e, "genre"),
                     Added = Long(Str(e, "last_modified")),
+                    TmdbId = Str(e, "tmdb") ?? Str(e, "tmdb_id"),
                 },
             };
             if (item.Id.Length > 0) list.Add(item);

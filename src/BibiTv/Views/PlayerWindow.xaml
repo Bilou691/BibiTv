@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
         Title="BibiTV" Width="1280" Height="720" MinWidth="640" MinHeight="360"
+        Icon="/Assets/BibiTv.ico"
         Background="Black" WindowStyle="None" WindowState="Maximized" ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="True">
 

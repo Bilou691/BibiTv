@@ -2,7 +2,10 @@
 
 Lecteur IPTV **Xtream Codes** pour Windows, avec une interface épurée inspirée de l'Apple TV.
 
-- **En direct / Films / Séries** : trois onglets, classés selon les catégories du fournisseur
+- **Accueil** : à la une, Top 10 des films et des séries de la semaine, Top 10 des chaînes les plus regardées en France, Ma liste, nouveautés
+- **En direct / Films / Séries** : classés selon les catégories du fournisseur
+- **Chaînes par marque** : Canal+, beIN Sports, RMC Sport, Eurosport, DAZN, Ligue 1+, L'Équipe, Infos… pour retrouver vite les matchs
+- **Jingle d'ouverture** silencieux avec le logo BibiTV (cliquer pour passer)
 - **Récemment ajoutés** : les films et séries triés par date d'ajout
 - **Doublons fusionnés** : « Verity (2026) 4K MULTI », « FHD MULTI » et « SUBT AR » deviennent une seule affiche ; la version (qualité / langue) se choisit sur la fiche
 - **Téléchargements** : films, épisodes ou saisons entières sur le PC (dossier `Vidéos\BibiTV` par défaut, modifiable), avec suivi de la progression
@@ -23,6 +26,17 @@ Lecteur IPTV **Xtream Codes** pour Windows, avec une interface épurée inspiré
 
 Chaque build publie (ou met à jour) la release correspondant à `<Version>` dans `src/BibiTv/BibiTv.csproj`.
 **Pour diffuser une mise à jour aux applis installées, augmentez ce numéro de version** : elles la proposeront au prochain démarrage.
+
+## Top 10 de la semaine (TMDB)
+
+Sans configuration, le Top 10 reprend les nouveautés de la semaine les mieux notées du catalogue.
+Pour afficher les **vraies tendances de la semaine**, ajoutez une clé TMDB au dépôt (elle n'apparaît jamais dans le code) :
+
+1. Créez un compte gratuit sur [themoviedb.org](https://www.themoviedb.org/signup), puis **Paramètres → API**, et copiez le « Jeton d'accès en lecture à l'API »
+2. Sur GitHub : **Settings → Secrets and variables → Actions → New repository secret**, nom `TMDB_KEY`, valeur = le jeton
+3. Relancez le workflow : la clé est intégrée à l'exe au moment de la compilation
+
+_Ce produit utilise l'API TMDB mais n'est ni approuvé ni certifié par TMDB._
 
 ## Connexion
 
@@ -70,6 +84,9 @@ src/BibiTv/
 ├── Services/TitleGrouper.cs    Fusion des doublons (4K, FHD, VOSTFR…)
 ├── Services/DownloadManager.cs File de téléchargements
 ├── Services/UpdateService.cs   Mise à jour depuis les releases GitHub
+├── Services/TopService.cs      Top 10 de la semaine (TMDB ou catalogue)
+├── Services/ChannelBrands.cs   Chaînes par marque + Top 10 des chaînes en France
+├── Assets/                     Logo et icône
 ├── Themes/Styles.xaml          Thème sombre façon tvOS
 ├── Views/MainWindow.*          Connexion, navigation, fiche détail
 └── Views/PlayerWindow.*        Lecteur LibVLC plein écran

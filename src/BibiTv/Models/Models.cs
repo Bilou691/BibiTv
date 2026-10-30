@@ -7,6 +7,9 @@ public sealed class Category
     public string Id { get; init; } = "";
     public string Name { get; init; } = "";
     public int Count { get; set; }
+    /// <summary>Intertitre non sélectionnable (« MARQUES », « CATÉGORIES »).</summary>
+    public bool IsHeader { get; init; }
+    public string CountText => IsHeader ? "" : Count.ToString();
 
     public const string AllId = "__all__";
 }
@@ -25,6 +28,7 @@ public sealed class MediaItem
     public string? Plot { get; init; }
     public string? Genre { get; init; }
     public long Added { get; init; }
+    public string? TmdbId { get; init; }
 
     /// <summary>Étiquette de version extraite du titre (« 4K MULTI », « SUBT AR »…).</summary>
     public string Tag { get; set; } = "";

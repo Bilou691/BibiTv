@@ -4,7 +4,7 @@
         xmlns:m="clr-namespace:BibiTv.Models"
         xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
         xmlns:svc="clr-namespace:BibiTv.Services"
-        Title="BibiTV" Width="1440" Height="900" MinWidth="960" MinHeight="620"
+        Title="BibiTV" Icon="/Assets/BibiTv.ico" Width="1440" Height="900" MinWidth="960" MinHeight="620"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource Bg}"
         Foreground="{StaticResource TextPrimary}"
@@ -54,6 +54,57 @@
             </StackPanel>
         </DataTemplate>
 
+        <!-- Top 10 : grand numéro + affiche -->
+        <LinearGradientBrush x:Key="RankBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#B3FFFFFF" Offset="0" />
+            <GradientStop Color="#14FFFFFF" Offset="0.9" />
+        </LinearGradientBrush>
+
+        <DataTemplate x:Key="RankedPosterTemplate" DataType="{x:Type svc:RankedItem}">
+            <Grid Width="250" Height="300">
+                <TextBlock Text="{Binding RankText}" FontSize="200" FontWeight="Black" Foreground="{StaticResource RankBrush}"
+                           HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-4,40,0,0" LineHeight="200"
+                           LineStackingStrategy="BlockLineHeight" />
+                <StackPanel Width="168" HorizontalAlignment="Right">
+                    <Grid Width="168" Height="252">
+                        <Border CornerRadius="14" Background="{StaticResource Surface}">
+                            <TextBlock Text="{Binding Item.Initial}" FontSize="56" FontWeight="Bold" Foreground="{StaticResource TextTertiary}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <Border CornerRadius="14">
+                            <Border.Background>
+                                <ImageBrush ImageSource="{Binding Item.ImageUrl, Converter={StaticResource PosterImage}}" Stretch="UniformToFill" />
+                            </Border.Background>
+                        </Border>
+                        <Border CornerRadius="14" BorderThickness="1" BorderBrush="#14FFFFFF" />
+                    </Grid>
+                    <TextBlock Text="{Binding Item.Title}" Margin="2,10,2,0" FontSize="13" FontWeight="Medium" Foreground="#E5E5EA"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Item.Title}" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="RankedLiveTemplate" DataType="{x:Type svc:RankedItem}">
+            <Grid Width="290" Height="160">
+                <TextBlock Text="{Binding RankText}" FontSize="130" FontWeight="Black" Foreground="{StaticResource RankBrush}"
+                           HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-4,6,0,0" LineHeight="130"
+                           LineStackingStrategy="BlockLineHeight" />
+                <StackPanel Width="208" HorizontalAlignment="Right">
+                    <Border CornerRadius="14" Background="{StaticResource Surface}" Width="208" Height="117" BorderThickness="1" BorderBrush="#14FFFFFF">
+                        <Grid>
+                            <TextBlock Text="{Binding Item.Initial}" FontSize="40" FontWeight="Bold" Foreground="{StaticResource TextTertiary}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="{Binding Item.ImageUrl, Converter={StaticResource NullToVisible}}" />
+                            <Image Margin="26,18" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"
+                                   Source="{Binding Item.ImageUrl, Converter={StaticResource LogoImage}}" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Text="{Binding Item.Title}" Margin="2,10,2,0" FontSize="13" FontWeight="Medium" Foreground="#E5E5EA"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+
         <Style x:Key="TileClickable" TargetType="ListBoxItem" BasedOn="{StaticResource TileItem}">
             <EventSetter Event="MouseLeftButtonUp" Handler="Tile_Click" />
             <EventSetter Event="MouseRightButtonUp" Handler="Tile_RightClick" />
@@ -93,6 +144,7 @@
         <!-- ===================== CONNEXION ===================== -->
         <Grid x:Name="LoginView">
             <StackPanel Width="400" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Image Source="/Assets/BibiTv.png" Width="96" Height="96" RenderOptions.BitmapScalingMode="HighQuality" Margin="0,0,0,18" />
                 <TextBlock Text="BibiTV" FontSize="52" FontWeight="Bold" HorizontalAlignment="Center" />
                 <TextBlock Text="Connectez votre abonnement Xtream Codes" FontSize="15" Margin="0,6,0,26"
                            Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center" />
@@ -139,6 +191,8 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Image Source="/Assets/BibiTv.png" Width="32" Height="32" RenderOptions.BitmapScalingMode="HighQuality"
+                           VerticalAlignment="Center" Margin="0,0,10,0" />
                     <TextBlock Text="BibiTV" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" />
                     <Button x:Name="VersionButton" Style="{StaticResource GhostButton}" FontSize="12" Margin="8,2,0,0"
                             ToolTip="Rechercher une mise à jour" Click="CheckUpdate_Click" />
@@ -146,6 +200,7 @@
 
                 <Border Grid.Column="1" Background="#B31C1C1E" CornerRadius="22" Padding="4">
                     <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="NavHome" Content="Accueil" GroupName="nav" Style="{StaticResource NavPill}" Checked="Nav_Checked" />
                         <RadioButton x:Name="NavLive" Content="En direct" GroupName="nav" Style="{StaticResource NavPill}" Checked="Nav_Checked" />
                         <RadioButton x:Name="NavMovies" Content="Films" GroupName="nav" Style="{StaticResource NavPill}" Checked="Nav_Checked" />
                         <RadioButton x:Name="NavSeries" Content="Séries" GroupName="nav" Style="{StaticResource NavPill}" Checked="Nav_Checked" />
@@ -153,7 +208,7 @@
                 </Border>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Border Background="{StaticResource Surface}" CornerRadius="18" Height="36" Width="260" Padding="12,0">
+                    <Border x:Name="SearchContainer" Background="{StaticResource Surface}" CornerRadius="18" Height="36" Width="260" Padding="12,0">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -182,8 +237,192 @@
                 </StackPanel>
             </Grid>
 
-            <!-- Contenu -->
-            <Grid Grid.Row="1">
+
+            <!-- Accueil -->
+            <ScrollViewer x:Name="HomeView" Grid.Row="1" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                <StackPanel Margin="32,6,32,40">
+                    <!-- Bandeau à la une -->
+                    <Grid x:Name="Hero" Height="440" Visibility="Collapsed">
+                        <Border CornerRadius="24" Background="{StaticResource Surface}">
+                            <Border CornerRadius="24">
+                                <Border.Background>
+                                    <ImageBrush x:Name="HeroImage" Stretch="UniformToFill" AlignmentY="Top" />
+                                </Border.Background>
+                            </Border>
+                        </Border>
+                        <Border CornerRadius="24">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="#F00A0A0C" Offset="0" />
+                                    <GradientStop Color="#990A0A0C" Offset="0.45" />
+                                    <GradientStop Color="#000A0A0C" Offset="0.85" />
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <StackPanel VerticalAlignment="Bottom" Margin="48,0,48,44" MaxWidth="620" HorizontalAlignment="Left">
+                            <TextBlock x:Name="HeroKicker" FontSize="12" FontWeight="Bold" Foreground="#FFD60A" />
+                            <TextBlock x:Name="HeroTitle" FontSize="44" FontWeight="Bold" TextWrapping="Wrap" Margin="0,8,0,0" />
+                            <TextBlock x:Name="HeroMeta" FontSize="14" Foreground="#CCFFFFFF" Margin="0,8,0,0" />
+                            <TextBlock x:Name="HeroPlot" FontSize="15" LineHeight="23" Foreground="#D1D1D6" TextWrapping="Wrap" Margin="0,14,0,0"
+                                       MaxHeight="70" TextTrimming="WordEllipsis" />
+                            <StackPanel Orientation="Horizontal" Margin="0,22,0,0">
+                                <Button Style="{StaticResource PrimaryButton}" Click="HeroPlay_Click" MinWidth="150">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14"
+                                                   VerticalAlignment="Center" Margin="0,0,10,0" />
+                                        <TextBlock Text="Lecture" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Content="Plus d'infos" Style="{StaticResource SecondaryButton}" Margin="12,0,0,0" Click="HeroInfo_Click" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Top 10 des films de la semaine -->
+                    <Grid Margin="0,34,0,0" x:Name="TopMoviesRow">
+                        <StackPanel>
+                            <TextBlock Text="Top 10 des films de la semaine" FontSize="22" FontWeight="Bold" />
+                            <TextBlock x:Name="TopMoviesSource" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Content="&#xE76B;" Style="{StaticResource SmallIconButton}" Tag="{Binding ElementName=TopMoviesScroll}" Click="RowLeft_Click" />
+                            <Button Content="&#xE76C;" Style="{StaticResource SmallIconButton}" Margin="8,0,0,0" Tag="{Binding ElementName=TopMoviesScroll}" Click="RowRight_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="TopMoviesScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="Row_PreviewMouseWheel" Margin="-10,4,-10,0">
+                        <ListBox x:Name="TopMoviesList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource TileClickable}"
+                                 ItemTemplate="{StaticResource RankedPosterTemplate}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                    </ScrollViewer>
+
+                    <!-- Top 10 des séries de la semaine -->
+                    <Grid Margin="0,34,0,0" x:Name="TopSeriesRow">
+                        <StackPanel>
+                            <TextBlock Text="Top 10 des séries de la semaine" FontSize="22" FontWeight="Bold" />
+                            <TextBlock x:Name="TopSeriesSource" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Content="&#xE76B;" Style="{StaticResource SmallIconButton}" Tag="{Binding ElementName=TopSeriesScroll}" Click="RowLeft_Click" />
+                            <Button Content="&#xE76C;" Style="{StaticResource SmallIconButton}" Margin="8,0,0,0" Tag="{Binding ElementName=TopSeriesScroll}" Click="RowRight_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="TopSeriesScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="Row_PreviewMouseWheel" Margin="-10,4,-10,0">
+                        <ListBox x:Name="TopSeriesList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource TileClickable}"
+                                 ItemTemplate="{StaticResource RankedPosterTemplate}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                    </ScrollViewer>
+
+                    <!-- Top 10 des chaînes TV en France -->
+                    <Grid Margin="0,34,0,0" x:Name="TopChannelsRow">
+                        <StackPanel>
+                            <TextBlock Text="Top 10 des chaînes TV en France" FontSize="22" FontWeight="Bold" />
+                            <TextBlock x:Name="TopChannelsSource" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Content="&#xE76B;" Style="{StaticResource SmallIconButton}" Tag="{Binding ElementName=TopChannelsScroll}" Click="RowLeft_Click" />
+                            <Button Content="&#xE76C;" Style="{StaticResource SmallIconButton}" Margin="8,0,0,0" Tag="{Binding ElementName=TopChannelsScroll}" Click="RowRight_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="TopChannelsScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="Row_PreviewMouseWheel" Margin="-10,4,-10,0">
+                        <ListBox x:Name="TopChannelsList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource TileClickable}"
+                                 ItemTemplate="{StaticResource RankedLiveTemplate}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                    </ScrollViewer>
+
+                    <!-- Ma liste -->
+                    <Grid Margin="0,34,0,0" x:Name="MyListRow">
+                        <StackPanel>
+                            <TextBlock Text="Ma liste" FontSize="22" FontWeight="Bold" />
+                            <TextBlock x:Name="MyListSource" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Content="&#xE76B;" Style="{StaticResource SmallIconButton}" Tag="{Binding ElementName=MyListScroll}" Click="RowLeft_Click" />
+                            <Button Content="&#xE76C;" Style="{StaticResource SmallIconButton}" Margin="8,0,0,0" Tag="{Binding ElementName=MyListScroll}" Click="RowRight_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="MyListScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="Row_PreviewMouseWheel" Margin="-10,4,-10,0">
+                        <ListBox x:Name="MyListList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource TileClickable}"
+                                 ItemTemplate="{StaticResource PosterTemplate}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                    </ScrollViewer>
+
+                    <!-- Nouveaux films -->
+                    <Grid Margin="0,34,0,0" x:Name="RecentMoviesRow">
+                        <StackPanel>
+                            <TextBlock Text="Nouveaux films" FontSize="22" FontWeight="Bold" />
+                            <TextBlock x:Name="RecentMoviesSource" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Content="&#xE76B;" Style="{StaticResource SmallIconButton}" Tag="{Binding ElementName=RecentMoviesScroll}" Click="RowLeft_Click" />
+                            <Button Content="&#xE76C;" Style="{StaticResource SmallIconButton}" Margin="8,0,0,0" Tag="{Binding ElementName=RecentMoviesScroll}" Click="RowRight_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="RecentMoviesScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="Row_PreviewMouseWheel" Margin="-10,4,-10,0">
+                        <ListBox x:Name="RecentMoviesList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource TileClickable}"
+                                 ItemTemplate="{StaticResource PosterTemplate}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                    </ScrollViewer>
+
+                    <!-- Nouvelles séries -->
+                    <Grid Margin="0,34,0,0" x:Name="RecentSeriesRow">
+                        <StackPanel>
+                            <TextBlock Text="Nouvelles séries" FontSize="22" FontWeight="Bold" />
+                            <TextBlock x:Name="RecentSeriesSource" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Content="&#xE76B;" Style="{StaticResource SmallIconButton}" Tag="{Binding ElementName=RecentSeriesScroll}" Click="RowLeft_Click" />
+                            <Button Content="&#xE76C;" Style="{StaticResource SmallIconButton}" Margin="8,0,0,0" Tag="{Binding ElementName=RecentSeriesScroll}" Click="RowRight_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="RecentSeriesScroll" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="Row_PreviewMouseWheel" Margin="-10,4,-10,0">
+                        <ListBox x:Name="RecentSeriesList" Style="{StaticResource PlainListBox}" ItemContainerStyle="{StaticResource TileClickable}"
+                                 ItemTemplate="{StaticResource PosterTemplate}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                        </ListBox>
+                    </ScrollViewer>
+
+                    <TextBlock x:Name="HomeEmpty" FontSize="16" Foreground="{StaticResource TextSecondary}" Margin="0,60,0,0"
+                               HorizontalAlignment="Center" TextWrapping="Wrap" Visibility="Collapsed" />
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Catalogue -->
+            <Grid x:Name="CatalogView" Grid.Row="1">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="270" />
                     <ColumnDefinition Width="*" />
@@ -200,7 +439,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
-                                <TextBlock Grid.Column="1" Text="{Binding Count}" Margin="10,0,0,0" FontSize="12"
+                                <TextBlock Grid.Column="1" Text="{Binding CountText}" Margin="10,0,0,0" FontSize="12"
                                            Foreground="{StaticResource TextTertiary}" VerticalAlignment="Center" />
                             </Grid>
                         </DataTemplate>
@@ -502,6 +741,43 @@
                 </Ellipse>
                 <TextBlock x:Name="LoadingText" Text="Chargement…" FontSize="15" Foreground="{StaticResource TextSecondary}"
                            Margin="0,18,0,0" HorizontalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ===================== JINGLE D'OUVERTURE (silencieux) ===================== -->
+        <Grid x:Name="SplashView" Background="Black" MouseLeftButtonDown="Splash_Skip" Cursor="Hand">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid x:Name="SplashLogo" Width="168" Height="168" RenderTransformOrigin="0.5,0.5" Opacity="0">
+                    <Grid.RenderTransform>
+                        <ScaleTransform x:Name="SplashScale" ScaleX="0.82" ScaleY="0.82" />
+                    </Grid.RenderTransform>
+                    <Grid.Effect>
+                        <DropShadowEffect x:Name="SplashGlow" Color="#5E5CE6" BlurRadius="90" ShadowDepth="0" Opacity="0" />
+                    </Grid.Effect>
+                    <Image Source="/Assets/BibiTv.png" RenderOptions.BitmapScalingMode="HighQuality" />
+                    <!-- Reflet qui balaie le logo -->
+                    <Rectangle>
+                        <Rectangle.OpacityMask>
+                            <ImageBrush ImageSource="/Assets/BibiTv.png" />
+                        </Rectangle.OpacityMask>
+                        <Rectangle.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <LinearGradientBrush.RelativeTransform>
+                                    <TranslateTransform x:Name="SplashSweep" X="-1.2" Y="-1.2" />
+                                </LinearGradientBrush.RelativeTransform>
+                                <GradientStop Color="#00FFFFFF" Offset="0.35" />
+                                <GradientStop Color="#99FFFFFF" Offset="0.5" />
+                                <GradientStop Color="#00FFFFFF" Offset="0.65" />
+                            </LinearGradientBrush>
+                        </Rectangle.Fill>
+                    </Rectangle>
+                </Grid>
+                <TextBlock x:Name="SplashWord" Text="BibiTV" FontSize="46" FontWeight="Bold" HorizontalAlignment="Center"
+                           Margin="0,28,0,0" Opacity="0">
+                    <TextBlock.RenderTransform>
+                        <TranslateTransform x:Name="SplashWordShift" Y="14" />
+                    </TextBlock.RenderTransform>
+                </TextBlock>
             </StackPanel>
         </Grid>
     </Grid>

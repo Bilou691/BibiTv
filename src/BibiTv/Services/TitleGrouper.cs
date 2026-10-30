@@ -100,6 +100,7 @@ public static partial class TitleGrouper
                 Plot = variants.Select(v => v.Plot).FirstOrDefault(p => !string.IsNullOrWhiteSpace(p)),
                 Genre = variants.Select(v => v.Genre).FirstOrDefault(g => !string.IsNullOrWhiteSpace(g)),
                 Added = variants.Max(v => v.Added),
+                TmdbId = variants.Select(v => v.TmdbId).FirstOrDefault(t => !string.IsNullOrEmpty(t) && t != "0"),
                 Variants = variants,
                 CategoryIds = variants.Select(v => v.CategoryId).ToHashSet(),
             });

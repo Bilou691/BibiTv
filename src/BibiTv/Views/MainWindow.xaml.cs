@@ -4,6 +4,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using BibiTv.Models;
@@ -27,6 +29,10 @@ public partial class MainWindow : Window
     private SeriesInfo? _seriesInfo;
     private PlayerWindow? _player;
     private UpdateInfo? _update;
+    private bool _onHome;
+    private bool _homeBuilt;
+    private MediaItem? _heroItem;
+    private CancellationTokenSource? _homeCts;
     private CancellationTokenSource? _updateCts;
 
     public MainWindow()
@@ -47,6 +53,7 @@ public partial class MainWindow : Window
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        PlaySplash();
         VersionButton.Content = LoginVersionButton.Content = UpdateService.CurrentVersionText;
         _ = CheckUpdateAsync(silent: true);
 
@@ -91,8 +98,9 @@ public partial class MainWindow : Window
             BrowseView.Visibility = Visibility.Visible;
             HideLoading();
 
-            if (NavMovies.IsChecked == true) await LoadSectionAsync(Section.Movies);
-            else NavMovies.IsChecked = true;
+            _homeBuilt = false;
+            if (NavHome.IsChecked == true) await ShowHomeAsync();
+            else NavHome.IsChecked = true;
         }
         catch (Exception ex)
         {
@@ -113,6 +121,8 @@ public partial class MainWindow : Window
         _client = null;
         _items.Clear();
         _categories.Clear();
+        _homeBuilt = false;
+        _homeCts?.Cancel();
         SettingsService.SetCredentials(SettingsService.Current.ServerUrl, SettingsService.Current.Username, null);
         PassBox.Password = "";
         CloseDetail();
@@ -130,14 +140,47 @@ public partial class MainWindow : Window
     private async void Nav_Checked(object sender, RoutedEventArgs e)
     {
         if (_client == null) return;
+        if (sender == NavHome)
+        {
+            await ShowHomeAsync();
+            return;
+        }
         var section = sender == NavLive ? Section.Live : sender == NavSeries ? Section.Series : Section.Movies;
         await LoadSectionAsync(section);
+    }
+
+    /// <summary>Charge (une seule fois) le catalogue d'une section.</summary>
+    private async Task<bool> EnsureLoadedAsync(Section section)
+    {
+        if (_items.ContainsKey(section)) return true;
+        var client = _client;
+        if (client == null) return false;
+        var catsTask = client.GetCategoriesAsync(section);
+        var itemsTask = client.GetItemsAsync(section);
+        await Task.WhenAll(catsTask, itemsTask);
+        if (client != _client || _items.ContainsKey(section)) return _items.ContainsKey(section);
+
+        // Les doublons (4K / FHD / VOSTFR…) sont fusionnés en une seule affiche.
+        var items = TitleGrouper.Group(itemsTask.Result, merge: section != Section.Live);
+        if (section == Section.Live) ChannelBrands.Tag(items); // Canal+, beIN, RMC Sport…
+        _items[section] = items;
+        _categories[section] = catsTask.Result;
+        return true;
+    }
+
+    private void ShowView(bool home)
+    {
+        _onHome = home;
+        HomeView.Visibility = home ? Visibility.Visible : Visibility.Collapsed;
+        CatalogView.Visibility = home ? Visibility.Collapsed : Visibility.Visible;
+        SearchContainer.Visibility = home ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private async Task LoadSectionAsync(Section section)
     {
         if (_client == null) return;
         _section = section;
+        ShowView(home: false);
         SearchBox.Text = "";
         PosterList.Visibility = section == Section.Live ? Visibility.Collapsed : Visibility.Visible;
         LiveList.Visibility = section == Section.Live ? Visibility.Visible : Visibility.Collapsed;
@@ -153,14 +196,7 @@ public partial class MainWindow : Window
             });
             try
             {
-                var client = _client;
-                var catsTask = client.GetCategoriesAsync(section);
-                var itemsTask = client.GetItemsAsync(section);
-                await Task.WhenAll(catsTask, itemsTask);
-                if (client != _client) return; // déconnecté entre-temps
-                // Les doublons (4K / FHD / VOSTFR…) sont fusionnés en une seule affiche.
-                _items[section] = TitleGrouper.Group(itemsTask.Result, merge: section != Section.Live);
-                _categories[section] = catsTask.Result;
+                if (!await EnsureLoadedAsync(section)) return; // déconnecté entre-temps
             }
             catch (Exception ex)
             {
@@ -176,7 +212,7 @@ public partial class MainWindow : Window
             HideLoading();
         }
 
-        if (_section != section) return; // l'utilisateur a changé d'onglet pendant le chargement
+        if (_section != section || _onHome) return; // l'utilisateur a changé d'onglet pendant le chargement
         RefreshCategories(selectFirst: true);
     }
 
@@ -194,6 +230,18 @@ public partial class MainWindow : Window
             Name = _section == Section.Live ? "Toutes les chaînes" : "Récemment ajoutés",
             Count = items.Count,
         });
+        if (_section == Section.Live)
+        {
+            var brands = ChannelBrands.Names
+                .Select(b => new Category { Id = ChannelBrands.Prefix + b, Name = b })
+                .Where(b => counts.ContainsKey(b.Id)).ToList();
+            if (brands.Count > 0)
+            {
+                list.Add(new Category { Id = "hdr:brands", Name = "MARQUES", IsHeader = true });
+                foreach (var b in brands) { b.Count = counts[b.Id]; list.Add(b); }
+                list.Add(new Category { Id = "hdr:cats", Name = "CATÉGORIES", IsHeader = true });
+            }
+        }
         foreach (var c in _categories[_section])
         {
             if (!counts.TryGetValue(c.Id, out var n)) continue; // on masque les catégories vides
@@ -210,7 +258,7 @@ public partial class MainWindow : Window
 
     private void Category_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (CategoryList.SelectedItem == null) return;
+        if (CategoryList.SelectedItem is not Category { IsHeader: false }) return;
         if (SearchBox.Text.Length > 0)
         {
             SearchBox.Text = ""; // déclenche ApplyFilter via la recherche
@@ -275,21 +323,29 @@ public partial class MainWindow : Window
 
     private void Tile_Click(object sender, MouseButtonEventArgs e)
     {
-        if ((sender as ListBoxItem)?.DataContext is MediaItem item) Open(item);
+        if (Unwrap((sender as ListBoxItem)?.DataContext) is { } item)
+            Open(item, ItemsControl.ItemsControlFromItemContainer((ListBoxItem)sender));
     }
+
+    private static MediaItem? Unwrap(object? o) => o switch
+    {
+        MediaItem m => m,
+        RankedItem r => r.Item,
+        _ => null,
+    };
 
     private void TileList_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && (sender as ListBox)?.SelectedItem is MediaItem item)
+        if (e.Key == Key.Enter && Unwrap((sender as ListBox)?.SelectedItem) is { } item)
         {
-            Open(item);
+            Open(item, sender as ItemsControl);
             e.Handled = true;
         }
     }
 
     private void Tile_RightClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not ListBoxItem { DataContext: MediaItem item } container) return;
+        if (sender is not ListBoxItem container || Unwrap(container.DataContext) is not { } item) return;
         var fav = IsFavorite(item);
         var menuItem = new MenuItem { Header = fav ? "Retirer de Ma liste" : "Ajouter à Ma liste" };
         menuItem.Click += (_, _) => ToggleFavorite(item);
@@ -299,12 +355,13 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void Open(MediaItem item)
+    private void Open(MediaItem item, ItemsControl? source = null)
     {
         if (item.Kind == Section.Live)
         {
-            // Lecture directe, avec zapping possible dans la liste affichée.
-            var channels = (LiveList.ItemsSource as IEnumerable<MediaItem>)?.ToList() ?? new List<MediaItem> { item };
+            // Lecture directe, avec zapping possible dans la liste d'où vient la chaîne.
+            var channels = source?.ItemsSource?.Cast<object>().Select(Unwrap).OfType<MediaItem>().Where(m => m.Kind == Section.Live).ToList();
+            if (channels == null || !channels.Contains(item)) channels = new List<MediaItem> { item };
             var playlist = channels.Select(c => new PlaylistEntry(c.Title, "En direct", _client!.LiveUrl(c.Id))).ToList();
             StartPlayer(playlist, Math.Max(0, channels.IndexOf(item)), isLive: true);
         }
@@ -669,6 +726,176 @@ public partial class MainWindow : Window
         }
     }
 
+    // ===================== Accueil =====================
+
+    private async Task ShowHomeAsync()
+    {
+        if (_client == null) return;
+        ShowView(home: true);
+        if (_homeBuilt) return;
+
+        _homeCts?.Cancel();
+        var cts = _homeCts = new CancellationTokenSource();
+        ShowLoading("Préparation de l'accueil…");
+        var errors = new List<string>();
+        foreach (var section in new[] { Section.Movies, Section.Series, Section.Live })
+        {
+            try { await EnsureLoadedAsync(section); }
+            catch (Exception ex) { errors.Add(ex.Message); }
+            if (cts.IsCancellationRequested) return;
+        }
+        HideLoading();
+        if (!_onHome || _client == null) return;
+
+        var movies = _items.GetValueOrDefault(Section.Movies) ?? new();
+        var series = _items.GetValueOrDefault(Section.Series) ?? new();
+        var live = _items.GetValueOrDefault(Section.Live) ?? new();
+
+        var (topMovies, moviesTmdb) = await TopService.TopAsync(Section.Movies, movies, cts.Token);
+        var (topSeries, seriesTmdb) = await TopService.TopAsync(Section.Series, series, cts.Token);
+        if (cts.IsCancellationRequested) return;
+
+        SetRow(TopMoviesRow, TopMoviesScroll, TopMoviesList, topMovies);
+        TopMoviesSource.Text = moviesTmdb ? "Tendances de la semaine (TMDB), disponibles dans votre catalogue" : "Nouveautés de la semaine les mieux notées";
+        SetRow(TopSeriesRow, TopSeriesScroll, TopSeriesList, topSeries);
+        TopSeriesSource.Text = seriesTmdb ? "Tendances de la semaine (TMDB), disponibles dans votre catalogue" : "Nouveautés de la semaine les mieux notées";
+
+        var catNames = (_categories.GetValueOrDefault(Section.Live) ?? new()).ToDictionary(c => c.Id, c => c.Name);
+        var topChannels = ChannelBrands.TopChannels(live, catNames).Select((c, i) => new RankedItem(i + 1, c)).ToList();
+        SetRow(TopChannelsRow, TopChannelsScroll, TopChannelsList, topChannels);
+        TopChannelsSource.Text = "Les chaînes les plus regardées en France (audiences Médiamétrie)";
+
+        SetRow(RecentMoviesRow, RecentMoviesScroll, RecentMoviesList, movies.OrderByDescending(m => m.Added).Take(24).ToList());
+        RecentMoviesSource.Text = "Derniers ajouts au catalogue";
+        SetRow(RecentSeriesRow, RecentSeriesScroll, RecentSeriesList, series.OrderByDescending(m => m.Added).Take(24).ToList());
+        RecentSeriesSource.Text = "Dernières séries ajoutées ou mises à jour";
+        RefreshMyListRow();
+
+        HomeEmpty.Text = errors.Count > 0 ? "Une partie du catalogue n'a pas pu être chargée : " + string.Join(" / ", errors.Distinct()) : "";
+        HomeEmpty.Visibility = errors.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _homeBuilt = errors.Count == 0;
+
+        await ShowHeroAsync(topMovies.FirstOrDefault()?.Item, cts.Token);
+    }
+
+    private void RefreshMyListRow()
+    {
+        var favs = (_items.GetValueOrDefault(Section.Movies) ?? new()).Concat(_items.GetValueOrDefault(Section.Series) ?? new())
+            .Where(IsFavorite).ToList();
+        SetRow(MyListRow, MyListScroll, MyListList, favs);
+        MyListSource.Text = favs.Count == 1 ? "1 titre" : $"{favs.Count} titres";
+    }
+
+    private static void SetRow<T>(FrameworkElement header, ScrollViewer scroll, ItemsControl list, List<T> items)
+    {
+        list.ItemsSource = items;
+        var vis = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        header.Visibility = scroll.Visibility = vis;
+        scroll.ScrollToHorizontalOffset(0);
+    }
+
+    private async Task ShowHeroAsync(MediaItem? item, CancellationToken ct)
+    {
+        _heroItem = item;
+        if (item == null || _client == null)
+        {
+            Hero.Visibility = Visibility.Collapsed;
+            return;
+        }
+        HeroKicker.Text = "N°1 DES FILMS CETTE SEMAINE";
+        HeroTitle.Text = item.Title;
+        HeroMeta.Text = BuildMeta(item.Year, item.Genre, null, item.Rating);
+        HeroPlot.Text = item.Plot ?? "";
+        HeroImage.ImageSource = LoadImage(item.ImageUrl, 1200);
+        Hero.Visibility = Visibility.Visible;
+        try
+        {
+            var info = await _client.GetMovieInfoAsync(item.Variants.FirstOrDefault()?.Id ?? item.Id, ct);
+            if (ct.IsCancellationRequested || _heroItem != item) return;
+            HeroMeta.Text = BuildMeta(Year(info.ReleaseDate) ?? item.Year, info.Genre, info.Duration, info.Rating ?? item.Rating);
+            if (!string.IsNullOrWhiteSpace(info.Plot)) HeroPlot.Text = info.Plot;
+            if (LoadImage(info.Backdrop, 1600) is { } bd) HeroImage.ImageSource = bd;
+        }
+        catch
+        {
+            // Le bandeau garde l'affiche si les détails ne répondent pas.
+        }
+    }
+
+    private void HeroPlay_Click(object sender, RoutedEventArgs e)
+    {
+        if (_client == null || _heroItem == null) return;
+        var v = _heroItem.Variants.FirstOrDefault() ?? _heroItem;
+        StartPlayer(new List<PlaylistEntry> { new(_heroItem.Title, v.Tag, _client.MovieUrl(v.Id, v.Extension)) }, 0, isLive: false);
+    }
+
+    private void HeroInfo_Click(object sender, RoutedEventArgs e)
+    {
+        if (_heroItem != null) Open(_heroItem);
+    }
+
+    private void RowLeft_Click(object sender, RoutedEventArgs e) => ScrollRow(sender, -1);
+    private void RowRight_Click(object sender, RoutedEventArgs e) => ScrollRow(sender, 1);
+
+    private static void ScrollRow(object sender, int direction)
+    {
+        if ((sender as FrameworkElement)?.Tag is ScrollViewer sv)
+            sv.ScrollToHorizontalOffset(sv.HorizontalOffset + direction * sv.ViewportWidth * 0.8);
+    }
+
+    /// <summary>La molette fait défiler la page (Maj + molette : la rangée).</summary>
+    private void Row_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer sv) return;
+        e.Handled = true;
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            sv.ScrollToHorizontalOffset(sv.HorizontalOffset - e.Delta);
+        else
+            HomeView.ScrollToVerticalOffset(HomeView.VerticalOffset - e.Delta);
+    }
+
+    // ===================== Jingle d'ouverture (silencieux) =====================
+
+    private void PlaySplash()
+    {
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        DoubleAnimation A(double from, double to, double begin, double dur, IEasingFunction? e = null) =>
+            new(from, to, TimeSpan.FromSeconds(dur)) { BeginTime = TimeSpan.FromSeconds(begin), EasingFunction = e ?? ease };
+
+        SplashLogo.BeginAnimation(OpacityProperty, A(0, 1, 0.15, 0.7));
+        var pop = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.35 };
+        SplashScale.BeginAnimation(ScaleTransform.ScaleXProperty, A(0.82, 1, 0.15, 0.95, pop));
+        SplashScale.BeginAnimation(ScaleTransform.ScaleYProperty, A(0.82, 1, 0.15, 0.95, pop));
+
+        var glow = new DoubleAnimationUsingKeyFrames();
+        glow.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(0.2))));
+        glow.KeyFrames.Add(new EasingDoubleKeyFrame(0.9, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(1.0)), ease));
+        glow.KeyFrames.Add(new EasingDoubleKeyFrame(0.45, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(1.8)), ease));
+        SplashGlow.BeginAnimation(System.Windows.Media.Effects.DropShadowEffect.OpacityProperty, glow);
+
+        var sineInOut = new SineEase { EasingMode = EasingMode.EaseInOut };
+        SplashSweep.BeginAnimation(TranslateTransform.XProperty, A(-1.2, 1.2, 0.85, 0.9, sineInOut));
+        SplashSweep.BeginAnimation(TranslateTransform.YProperty, A(-1.2, 1.2, 0.85, 0.9, sineInOut));
+
+        SplashWord.BeginAnimation(OpacityProperty, A(0, 1, 1.0, 0.6));
+        SplashWordShift.BeginAnimation(TranslateTransform.YProperty, A(14, 0, 1.0, 0.7));
+
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.7) };
+        timer.Tick += (_, _) => { timer.Stop(); HideSplash(); };
+        timer.Start();
+    }
+
+    private void Splash_Skip(object sender, MouseButtonEventArgs e) => HideSplash();
+
+    private void HideSplash()
+    {
+        if (SplashView.Visibility != Visibility.Visible || !SplashView.IsHitTestVisible) return;
+        SplashView.IsHitTestVisible = false;
+        var fade = new DoubleAnimation(0, TimeSpan.FromSeconds(0.5)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
+        fade.Completed += (_, _) => SplashView.Visibility = Visibility.Collapsed;
+        SplashView.BeginAnimation(OpacityProperty, fade);
+    }
+
     // ===================== Favoris =====================
 
     private static string FavKey(MediaItem item) => $"{item.Kind}:{item.Id}";
@@ -688,7 +915,8 @@ public partial class MainWindow : Window
         else
             favs.Add(FavKey(item));
         SettingsService.Save();
-        if (item.Kind == _section) RefreshCategories(selectFirst: false);
+        if (item.Kind == _section && _items.ContainsKey(_section)) RefreshCategories(selectFirst: false);
+        if (_homeBuilt) RefreshMyListRow();
         UpdateFavButton();
     }
 
@@ -731,6 +959,7 @@ public partial class MainWindow : Window
         else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control && BrowseView.Visibility == Visibility.Visible)
         {
             CloseDetail();
+            if (_onHome) NavMovies.IsChecked = true;
             SearchBox.Focus();
             SearchBox.SelectAll();
             e.Handled = true;

@@ -14,6 +14,8 @@ public sealed class AppSettings
     public int Volume { get; set; } = 80;
     public List<string> Favorites { get; set; } = new();
     public string? DownloadFolder { get; set; }
+    /// <summary>Clé API TMDB (facultative) pour les vraies tendances de la semaine.</summary>
+    public string? TmdbKey { get; set; }
 }
 
 /// <summary>Sauvegarde des réglages dans %APPDATA%\BibiTv\settings.json.</summary>

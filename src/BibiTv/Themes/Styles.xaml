@@ -251,6 +251,15 @@
                             <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
                             <Setter Property="FontWeight" Value="SemiBold" />
                         </Trigger>
+                        <DataTrigger Binding="{Binding IsHeader}" Value="True">
+                            <Setter Property="IsHitTestVisible" Value="False" />
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="Foreground" Value="{StaticResource TextTertiary}" />
+                            <Setter Property="FontSize" Value="11" />
+                            <Setter Property="FontWeight" Value="Bold" />
+                            <Setter TargetName="bd" Property="Margin" Value="0,14,0,2" />
+                            <Setter TargetName="bd" Property="Background" Value="Transparent" />
+                        </DataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
