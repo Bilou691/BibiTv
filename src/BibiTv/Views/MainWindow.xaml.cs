@@ -170,7 +170,12 @@ public partial class MainWindow : Window
         if (client != _client || _items.ContainsKey(section)) return _items.ContainsKey(section);
 
         // Les doublons (4K / FHD / VOSTFR…) sont fusionnés en une seule affiche.
-        var items = TitleGrouper.Group(itemsTask.Result, merge: section != Section.Live);
+        // Catégories françaises : leur titre est préféré quand une œuvre existe en plusieurs langues.
+        var frenchCats = catsTask.Result
+            .Where(c => System.Text.RegularExpressions.Regex.IsMatch(c.Name, @"(^|[^A-Za-z])(FR|VF|VFF|VFQ|FRENCH|FRANCE|FRANÇAIS)([^A-Za-z]|$)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .Select(c => c.Id).ToHashSet();
+        var items = TitleGrouper.Group(itemsTask.Result, merge: section != Section.Live, i => frenchCats.Contains(i.CategoryId));
         if (section == Section.Live) ChannelBrands.Tag(items); // Canal+, beIN, RMC Sport…
         _items[section] = items;
         foreach (var i in items) _byKey[i.Key] = i;
