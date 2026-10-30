@@ -40,6 +40,11 @@ object SettingsStore {
         get() = prefs.getBoolean("match_fps", true)
         set(v) = prefs.edit().putBoolean("match_fps", v).apply()
 
+    /** Format d'image : 0 = original (bandes noires possibles), 1 = zoom (remplit l'écran), 2 = étiré. */
+    var videoFormat: Int
+        get() = prefs.getInt("video_format", 0)
+        set(v) = prefs.edit().putInt("video_format", v).apply()
+
     /** Destination des téléchargements : chemin d'un volume (clé USB…) ou URI d'un dossier choisi. */
     var downloadTarget: String?
         get() = prefs.getString("download_target", null)

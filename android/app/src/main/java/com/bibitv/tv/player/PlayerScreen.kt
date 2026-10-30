@@ -92,6 +92,12 @@ object Vlc {
     }
 }
 
+private fun formatName(f: Int) = when (f) {
+    1 -> "Zoom"
+    2 -> "Étiré"
+    else -> "Original"
+}
+
 private fun fmt(ms: Long): String {
     if (ms <= 0) return "0:00"
     val s = ms / 1000
@@ -153,6 +159,7 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
     var subtitle by remember { mutableStateOf("") }
     var osd by remember { mutableStateOf<String?>(null) }
     var lastKey by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var format by remember { mutableIntStateOf(SettingsStore.videoFormat) }
     var trackMenu by remember { mutableStateOf<Pair<String, List<Pair<String, () -> Unit>>>?>(null) }
     val state = remember { object { var resumed = -1; var liveRetries = 0; var pfd: ParcelFileDescriptor? = null } }
 
@@ -231,6 +238,21 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
         }
     }
 
+    fun applyFormat(f: Int) {
+        mp.setVideoScale(when (f) {
+            1 -> MediaPlayer.ScaleType.SURFACE_FIT_SCREEN // zoom : remplit l'écran (rogne les bords)
+            2 -> MediaPlayer.ScaleType.SURFACE_FILL       // étiré
+            else -> MediaPlayer.ScaleType.SURFACE_BEST_FIT
+        })
+    }
+
+    fun cycleFormat() {
+        format = (format + 1) % 3
+        SettingsStore.videoFormat = format
+        applyFormat(format)
+        showOsd(formatName(format))
+    }
+
     fun tracksMenu(audio: Boolean) {
         val tracks = (if (audio) mp.audioTracks else mp.spuTracks) ?: emptyArray()
         val current = if (audio) mp.audioTrack else mp.spuTrack
@@ -277,6 +299,7 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
             }
         }
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        applyFormat(format)
         playAt(req.index)
         onDispose {
             report()
@@ -406,6 +429,7 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                         if (!req.isLive) PillButton("+30 s", { seekBy(30) })
                         if (req.playlist.size > 1) PillButton(if (req.isLive) "Chaîne suiv.  ▶" else "Suivant  ▶", { step(1) })
                         Spacer(Modifier.weight(1f))
+                        PillButton("Format : ${formatName(format)}", { cycleFormat() })
                         PillButton("Audio", { tracksMenu(true) })
                         PillButton("Sous-titres", { tracksMenu(false) })
                     }

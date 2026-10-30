@@ -160,6 +160,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         showSettings = false
     }
 
+    private var tabJob: Job? = null
+
+    /** Changement d'onglet au focus, après un court délai (évite de charger chaque onglet survolé). */
+    fun focusTab(t: Tab) {
+        tabJob?.cancel()
+        if (t == tab) return
+        tabJob = viewModelScope.launch { delay(400); tab = t }
+    }
+
     // =================== Catalogue ===================
 
     suspend fun ensureLoaded(section: Section): Boolean {

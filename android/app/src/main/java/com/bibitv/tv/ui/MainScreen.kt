@@ -85,7 +85,7 @@ private fun TopBar(vm: AppViewModel) {
         Spacer(Modifier.weight(1f))
         Row(Modifier.clip(RoundedCornerShape(26.dp)).background(Color(0xB31C1C1E)).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Tab.entries.forEach { t ->
-                PillButton(t.label, { vm.tab = t }, selected = vm.tab == t, onFocus = { vm.tab = t })
+                PillButton(t.label, { vm.tab = t }, selected = vm.tab == t, onFocus = { vm.focusTab(t) })
             }
         }
         Spacer(Modifier.weight(1f))
@@ -244,6 +244,13 @@ private fun CatalogScreen(vm: AppViewModel, section: Section) {
         vm.catalogQuery[section] = ""
         scope.launch { gridState.scrollToItem(0) }
     }
+    // Au focus, la catégorie n'est appliquée que si la sélection reste posée (défilement rapide fluide).
+    var pending by remember(section) { mutableStateOf<String?>(null) }
+    LaunchedEffect(pending) {
+        val id = pending ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(350)
+        select(id)
+    }
 
     if (all == null) {
         vm.loadErrors[section]?.let { err ->
@@ -264,7 +271,7 @@ private fun CatalogScreen(vm: AppViewModel, section: Section) {
                     Text(c.name, color = C.Text3, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 14.dp, top = 16.dp, bottom = 4.dp))
                 } else {
                     val selected = c.id == category
-                    Focusable({ select(c.id) }, Modifier.fillMaxWidth().padding(vertical = 2.dp), onFocus = { select(c.id) },
+                    Focusable({ select(c.id) }, Modifier.fillMaxWidth().padding(vertical = 2.dp), onFocus = { pending = c.id },
                         shape = RoundedCornerShape(10.dp), focusedScale = 1.03f, borderWidth = 0.dp) { f ->
                         Row(
                             Modifier.fillMaxWidth().background(if (f) Color.White else if (selected) C.Surface2 else Color.Transparent)

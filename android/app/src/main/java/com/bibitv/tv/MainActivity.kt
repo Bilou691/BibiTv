@@ -5,19 +5,33 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import com.bibitv.tv.data.DownloadManager
+import com.bibitv.tv.data.XtreamClient
 import com.bibitv.tv.data.ProfileStore
 import com.bibitv.tv.data.SettingsStore
 import com.bibitv.tv.ui.AppRoot
 import com.bibitv.tv.ui.AppViewModel
 
-class BibiApp : Application() {
+class BibiApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         SettingsStore.init(this)
         ProfileStore.init(this)
         DownloadManager.init(this)
     }
+
+    /** Affiches et logos : cache mémoire + disque (256 Mo), sans fondu, pour une navigation fluide. */
+    override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
+        .okHttpClient(XtreamClient.http)
+        .crossfade(false)
+        .respectCacheHeaders(false)
+        .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.25).build() }
+        .diskCache { DiskCache.Builder().directory(cacheDir.resolve("images")).maxSizeBytes(256L * 1024 * 1024).build() }
+        .build()
 }
 
 class MainActivity : ComponentActivity() {

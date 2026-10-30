@@ -66,6 +66,12 @@ import kotlinx.coroutines.launch
 /** Racine de l'application : jingle, connexion, navigation et écrans superposés. */
 @Composable
 fun AppRoot(vm: AppViewModel) {
+    // Interface « 10-foot » : largeur logique fixée à 1280 dp quel que soit l'écran (1080p ou 4K),
+    // pour des tailles identiques sur toutes les TV.
+    val metrics = androidx.compose.ui.platform.LocalContext.current.resources.displayMetrics
+    val widthPx = maxOf(metrics.widthPixels, metrics.heightPixels)
+    val tvDensity = androidx.compose.ui.unit.Density(density = widthPx / 1280f, fontScale = 1f)
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides tvDensity) {
     MaterialTheme(colorScheme = darkColorScheme(background = C.Bg, surface = C.Surface, primary = Color.White)) {
         Box(Modifier.fillMaxSize().background(C.Bg)) {
             LaunchedEffect(Unit) { vm.autoLogin() }
@@ -88,6 +94,7 @@ fun AppRoot(vm: AppViewModel) {
 
             if (vm.showSplash) SplashScreen { vm.showSplash = false }
         }
+    }
     }
 }
 

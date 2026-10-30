@@ -24,8 +24,8 @@ android {
         applicationId = "com.bibitv.tv"
         minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
         buildConfigField("String", "TMDB_KEY", "\"$tmdbKey\"")
         ndk {
             // Box et TV Android : ARM 32 et 64 bits
@@ -46,7 +46,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 : code optimisé (interface plus fluide sur les TV)
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
