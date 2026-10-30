@@ -122,6 +122,9 @@ fun UpdatePromptScreen(vm: AppViewModel) {
             Text("BibiTV ${u.version}  ·  vous avez la version ${UpdateManager.currentVersion}", color = C.Text2, fontSize = 15.sp,
                 modifier = Modifier.padding(top = 8.dp))
             val p = vm.updateProgress
+            vm.updateBlocked?.let {
+                Text(it, color = C.Yellow, fontSize = 15.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 24.dp))
+            }
             if (p != null) {
                 Text("Téléchargement… ${(p * 100).toInt()} %", color = C.Text, fontSize = 15.sp, modifier = Modifier.padding(top = 28.dp))
                 ProgressLine(p, Modifier.fillMaxWidth().padding(top = 12.dp))

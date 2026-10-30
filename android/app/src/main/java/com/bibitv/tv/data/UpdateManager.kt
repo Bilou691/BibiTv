@@ -118,6 +118,27 @@ object UpdateManager {
         }
     }
 
+    /**
+     * Vrai si l'APK téléchargé n'est pas signé avec la même clé que l'application installée :
+     * Android refuserait alors la mise à jour (« L'application n'a pas pu être installée »).
+     */
+    @Suppress("DEPRECATION")
+    fun signatureMismatch(context: Context, apk: File): Boolean = try {
+        val pm = context.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+        else android.content.pm.PackageManager.GET_SIGNATURES
+        fun digests(pi: android.content.pm.PackageInfo?): Set<String>? {
+            val sigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pi?.signingInfo?.apkContentsSigners else pi?.signatures
+            if (sigs.isNullOrEmpty()) return null
+            return sigs.map { s -> MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) } }.toSet()
+        }
+        val update = digests(pm.getPackageArchiveInfo(apk.path, flags))
+        val installed = digests(pm.getPackageInfo(context.packageName, flags))
+        update != null && installed != null && update != installed
+    } catch (_: Exception) {
+        false
+    }
+
     fun install(context: Context, apk: File) {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
         context.startActivity(

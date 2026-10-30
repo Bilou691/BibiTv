@@ -111,6 +111,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var update by mutableStateOf<UpdateInfo?>(null)
     var updateProgress by mutableStateOf<Float?>(null)
     var updateMessage by mutableStateOf<String?>(null)
+    /** Mise à jour impossible depuis l'app (signature différente) : explication persistante. */
+    var updateBlocked by mutableStateOf<String?>(null)
 
     /** Mise à jour trouvée au démarrage : proposée avant de charger la playlist. */
     var updatePrompt by mutableStateOf(false)
@@ -606,6 +608,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 updateProgress = 0f
                 val apk = UpdateManager.download(ctx, u) { updateProgress = it }
                 updateProgress = null
+                if (UpdateManager.signatureMismatch(ctx, apk)) {
+                    updateBlocked = "Cette BibiTV a été installée avec une ancienne signature : Android refusera la mise à jour. " +
+                        "Désinstallez BibiTV, puis réinstallez-la avec Downloader : github.com/Bilou691/BibiTv/releases/download/android/bibitv.apk"
+                    return@launch
+                }
                 // Android ferme BibiTV pendant l'installation, puis la nouvelle version se lance.
                 updateMessage = "Installation… BibiTV va se fermer puis redémarrer à jour."
                 delay(600)

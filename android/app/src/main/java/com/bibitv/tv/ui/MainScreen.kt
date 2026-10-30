@@ -398,6 +398,7 @@ private fun UpdateBanner(vm: AppViewModel, modifier: Modifier) {
         Column(Modifier.weight(1f)) {
             Text("BibiTV ${u.version} est disponible", color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             val p = vm.updateProgress
+            vm.updateBlocked?.let { Text(it, color = C.Yellow, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp)) }
             if (p != null) {
                 Text("Téléchargement… ${(p * 100).toInt()} %", color = C.Text2, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
                 ProgressLine(p, Modifier.fillMaxWidth().padding(top = 8.dp))
