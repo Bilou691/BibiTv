@@ -40,6 +40,14 @@ object SettingsStore {
         get() = prefs.getBoolean("match_fps", true)
         set(v) = prefs.edit().putBoolean("match_fps", v).apply()
 
+    /**
+     * Rendu vidéo direct : l'image décodée par la TV est envoyée telle quelle à l'écran
+     * (HDR conservé, noirs profonds). Désactivable si une vidéo ne s'affiche pas.
+     */
+    var directRendering: Boolean
+        get() = prefs.getBoolean("direct_rendering", true)
+        set(v) = prefs.edit().putBoolean("direct_rendering", v).apply()
+
     /** Format d'image : 0 = original (bandes noires possibles), 1 = zoom (remplit l'écran), 2 = étiré. */
     var videoFormat: Int
         get() = prefs.getInt("video_format", 0)

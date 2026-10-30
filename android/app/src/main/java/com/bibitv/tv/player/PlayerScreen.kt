@@ -76,20 +76,31 @@ import kotlin.math.roundToInt
 /** Une seule instance de LibVLC pour toute l'application (son chargement est coûteux). */
 object Vlc {
     @Volatile private var lib: LibVLC? = null
+    private var libDirect: Boolean? = null
 
-    fun get(context: Context): LibVLC = lib ?: synchronized(this) {
-        lib ?: LibVLC(
+    fun get(context: Context): LibVLC = synchronized(this) {
+        val direct = SettingsStore.directRendering
+        lib?.takeIf { libDirect == direct } ?: create(context, direct).also {
+            lib?.release()
+            lib = it
+            libDirect = direct
+        }
+    }
+
+    private fun create(context: Context, direct: Boolean): LibVLC = LibVLC(
             context.applicationContext,
-            arrayListOf(
+            ArrayList(arrayListOf<String>().apply {
+                // Sortie directe vers le circuit vidéo de la TV : HDR10 et noirs conservés
+                if (direct) add("--vout=android_display,none")
+            } + arrayListOf(
                 // Tampon réseau confortable pour les flux 4K (débits élevés, réseau Wi-Fi des TV)
                 "--network-caching=3000",
                 "--live-caching=3000",
                 "--http-reconnect",
                 "--http-user-agent=${XtreamClient.USER_AGENT}",
                 "--audio-time-stretch",
-            ),
-        ).also { lib = it }
-    }
+            )),
+        )
 }
 
 private fun formatName(f: Int) = when (f) {
@@ -172,9 +183,9 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
         if (!req.isLive && length > 0) vm.onProgress(entry(), if (finished) length else time, length)
     }
 
-    fun showOsd(text: String) {
+    fun showOsd(text: String, durationMs: Long = 1200) {
         osd = text
-        scope.launch { delay(1200); if (osd == text) osd = null }
+        scope.launch { delay(durationMs); if (osd == text) osd = null }
     }
 
     fun playAt(i: Int) {
@@ -366,7 +377,12 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
     ) {
         // Rendu vidéo direct (SurfaceView) : aucune copie par l'interface, idéal en 4K.
         AndroidView(
-            factory = { ctx -> VLCVideoLayout(ctx).also { mp.attachViews(it, null, true, false) } },
+            factory = { ctx ->
+                VLCVideoLayout(ctx).also {
+                    it.setBackgroundColor(android.graphics.Color.BLACK)
+                    mp.attachViews(it, null, true, false)
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -429,6 +445,17 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                         if (!req.isLive) PillButton("+30 s", { seekBy(30) })
                         if (req.playlist.size > 1) PillButton(if (req.isLive) "Chaîne suiv.  ▶" else "Suivant  ▶", { step(1) })
                         Spacer(Modifier.weight(1f))
+                        PillButton("Infos", {
+                            val vt = mp.currentVideoTrack
+                            showOsd(
+                                if (vt == null) "Aucune piste vidéo"
+                                else "${vt.width}×${vt.height}" +
+                                    (if (vt.frameRateDen > 0) "  ·  %.3f i/s".format(vt.frameRateNum.toFloat() / vt.frameRateDen) else "") +
+                                    "  ·  ${vt.codec ?: "?"}" +
+                                    (if (vt.width >= 3800) "  ·  4K" else ""),
+                                4000,
+                            )
+                        })
                         PillButton("Format : ${formatName(format)}", { cycleFormat() })
                         PillButton("Audio", { tracksMenu(true) })
                         PillButton("Sous-titres", { tracksMenu(false) })

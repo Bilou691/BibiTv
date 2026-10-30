@@ -324,6 +324,18 @@ fun SettingsScreen(vm: AppViewModel) {
                 }, Modifier.focusRequester(first), activeColor = if (matchFps) C.Green else null)
             }
 
+            var direct by remember { mutableStateOf(SettingsStore.directRendering) }
+            Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Rendu vidéo direct (HDR)", color = C.Text, fontSize = 16.sp)
+                    Text("Noirs profonds et HDR conservés. À désactiver uniquement si une vidéo reste noire.",
+                        color = C.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp, end = 12.dp))
+                }
+                PillButton(if (direct) "Activé" else "Désactivé", {
+                    direct = !direct; SettingsStore.directRendering = direct
+                }, activeColor = if (direct) C.Green else null)
+            }
+
             Text("APPLICATION", color = C.Text2, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 26.dp, bottom = 10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Version ${UpdateManager.currentVersion}", color = C.Text, fontSize = 16.sp, modifier = Modifier.weight(1f))
