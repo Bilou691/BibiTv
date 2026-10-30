@@ -12,6 +12,7 @@ Lecteur IPTV **Xtream Codes** pour Windows, avec une interface épurée inspiré
 - **Recherche instantanée** dans l'onglet en cours (Ctrl+F), sans tenir compte des accents
 - **Lecteur basé sur VLC** (LibVLC) : TS, HLS, MKV, HEVC, AC3… avec choix de la **langue audio** et des **sous-titres**
 - Zapping entre les chaînes avec Page préc. / Page suiv.
+- **Mise à jour intégrée** : au démarrage (ou en cliquant sur le numéro de version), BibiTV vérifie la dernière release GitHub, la télécharge, vérifie son empreinte SHA-256 et redémarre à jour
 - Mot de passe **chiffré avec DPAPI** (lisible uniquement par votre compte Windows), dans `%APPDATA%\BibiTv\settings.json`
 
 ## Installation
@@ -20,7 +21,8 @@ Lecteur IPTV **Xtream Codes** pour Windows, avec une interface épurée inspiré
 2. Téléchargez l'artefact `BibiTv-win-x64` et dézippez-le
 3. Lancez `BibiTv.exe` (aucun prérequis : .NET et VLC sont embarqués)
 
-Pour créer une release téléchargeable : poussez un tag `v1.0.0`. Le workflow joint alors le zip à une release GitHub.
+Chaque build publie (ou met à jour) la release correspondant à `<Version>` dans `src/BibiTv/BibiTv.csproj`.
+**Pour diffuser une mise à jour aux applis installées, augmentez ce numéro de version** : elles la proposeront au prochain démarrage.
 
 ## Connexion
 
@@ -67,6 +69,7 @@ src/BibiTv/
 ├── Services/SettingsService.cs Réglages + mot de passe chiffré DPAPI
 ├── Services/TitleGrouper.cs    Fusion des doublons (4K, FHD, VOSTFR…)
 ├── Services/DownloadManager.cs File de téléchargements
+├── Services/UpdateService.cs   Mise à jour depuis les releases GitHub
 ├── Themes/Styles.xaml          Thème sombre façon tvOS
 ├── Views/MainWindow.*          Connexion, navigation, fiche détail
 └── Views/PlayerWindow.*        Lecteur LibVLC plein écran

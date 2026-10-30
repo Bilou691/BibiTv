@@ -118,6 +118,8 @@
                            TextWrapping="Wrap" TextAlignment="Center" />
                 <TextBlock Text="Le mot de passe est chiffré et stocké uniquement sur ce PC." FontSize="12" Margin="0,18,0,0"
                            Foreground="{StaticResource TextTertiary}" HorizontalAlignment="Center" />
+                <Button x:Name="LoginVersionButton" Style="{StaticResource GhostButton}" FontSize="12" Margin="0,6,0,0"
+                        HorizontalAlignment="Center" ToolTip="Rechercher une mise à jour" Click="CheckUpdate_Click" />
             </StackPanel>
         </Grid>
 
@@ -136,7 +138,11 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Text="BibiTV" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="BibiTV" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" />
+                    <Button x:Name="VersionButton" Style="{StaticResource GhostButton}" FontSize="12" Margin="8,2,0,0"
+                            ToolTip="Rechercher une mise à jour" Click="CheckUpdate_Click" />
+                </StackPanel>
 
                 <Border Grid.Column="1" Background="#B31C1C1E" CornerRadius="22" Padding="4">
                     <StackPanel Orientation="Horizontal">
@@ -444,6 +450,36 @@
                 </Grid>
             </Border>
         </Grid>
+
+        <!-- ===================== MISE À JOUR ===================== -->
+        <Border x:Name="UpdateBanner" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,28"
+                Background="#F21C1C1E" CornerRadius="18" Padding="22,16" BorderBrush="#26FFFFFF" BorderThickness="1" MaxWidth="640">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="40" ShadowDepth="8" Opacity="0.6" Color="Black" />
+            </Border.Effect>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Border Width="40" Height="40" CornerRadius="20" Background="#0A84FF" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Text="&#xE896;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" Foreground="White"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" MinWidth="240">
+                    <TextBlock x:Name="UpdateTitle" FontSize="15" FontWeight="SemiBold" />
+                    <TextBlock x:Name="UpdateText" FontSize="12" Foreground="{StaticResource TextSecondary}" Margin="0,3,0,0"
+                               TextWrapping="Wrap" MaxHeight="34" TextTrimming="WordEllipsis" />
+                    <ProgressBar x:Name="UpdateProgress" Style="{StaticResource SlimProgress}" Maximum="100" Margin="0,8,0,0" Visibility="Collapsed" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                    <Button x:Name="UpdateLaterButton" Content="Plus tard" Style="{StaticResource GhostButton}" Click="UpdateLater_Click" />
+                    <Button x:Name="UpdateNowButton" Content="Mettre à jour" Style="{StaticResource PrimaryButton}" Padding="20,9" FontSize="14"
+                            Margin="8,0,0,0" Click="UpdateNow_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
 
         <!-- ===================== CHARGEMENT ===================== -->
         <Grid x:Name="LoadingView" Background="#B30A0A0C" Visibility="Collapsed">

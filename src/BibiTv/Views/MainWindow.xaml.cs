@@ -26,6 +26,8 @@ public partial class MainWindow : Window
     private MovieInfo? _movieInfo;
     private SeriesInfo? _seriesInfo;
     private PlayerWindow? _player;
+    private UpdateInfo? _update;
+    private CancellationTokenSource? _updateCts;
 
     public MainWindow()
     {
@@ -45,6 +47,9 @@ public partial class MainWindow : Window
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        VersionButton.Content = LoginVersionButton.Content = UpdateService.CurrentVersionText;
+        _ = CheckUpdateAsync(silent: true);
+
         var s = SettingsService.Current;
         ServerBox.Text = s.ServerUrl;
         UserBox.Text = s.Username;
@@ -576,6 +581,93 @@ public partial class MainWindow : Window
     }
 
     private void DownloadsClear_Click(object sender, RoutedEventArgs e) => DownloadManager.Instance.ClearFinished();
+
+    // ===================== Mise à jour =====================
+
+    private async void CheckUpdate_Click(object sender, RoutedEventArgs e) => await CheckUpdateAsync(silent: false);
+
+    private async Task CheckUpdateAsync(bool silent)
+    {
+        if (_updateCts != null) return; // téléchargement en cours
+        try
+        {
+            if (!silent) ShowUpdateBanner("Recherche de mise à jour…", "", canUpdate: false, canClose: false);
+            _update = await UpdateService.CheckAsync();
+            if (_update != null)
+            {
+                var notes = _update.Notes?.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0) ?? "";
+                ShowUpdateBanner($"BibiTV {_update.Tag} est disponible",
+                    $"Vous avez la version {UpdateService.CurrentVersionText}.  {DownloadManager.Size(_update.Size)}. {notes}",
+                    canUpdate: true, canClose: true);
+            }
+            else if (!silent)
+            {
+                ShowUpdateBanner("BibiTV est à jour", $"Version {UpdateService.CurrentVersionText}", canUpdate: false, canClose: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!silent) ShowUpdateBanner("Vérification impossible", ex.Message, canUpdate: false, canClose: true);
+        }
+    }
+
+    private void ShowUpdateBanner(string title, string text, bool canUpdate, bool canClose)
+    {
+        UpdateTitle.Text = title;
+        UpdateText.Text = text;
+        UpdateProgress.Visibility = Visibility.Collapsed;
+        UpdateNowButton.Visibility = canUpdate ? Visibility.Visible : Visibility.Collapsed;
+        UpdateNowButton.IsEnabled = true;
+        UpdateLaterButton.Content = canUpdate ? "Plus tard" : "OK";
+        UpdateLaterButton.Visibility = canClose ? Visibility.Visible : Visibility.Collapsed;
+        UpdateBanner.Visibility = Visibility.Visible;
+    }
+
+    private void UpdateLater_Click(object sender, RoutedEventArgs e)
+    {
+        _updateCts?.Cancel();
+        UpdateBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private async void UpdateNow_Click(object sender, RoutedEventArgs e)
+    {
+        if (_update == null || _updateCts != null) return;
+        if (DownloadManager.Instance.ActiveCount > 0 &&
+            MessageBox.Show(this, "Des téléchargements sont en cours et seront interrompus. Continuer la mise à jour ?",
+                "BibiTV", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+
+        var cts = _updateCts = new CancellationTokenSource();
+        UpdateNowButton.IsEnabled = false;
+        UpdateLaterButton.Content = "Annuler";
+        UpdateTitle.Text = $"Téléchargement de BibiTV {_update.Tag}…";
+        UpdateProgress.Visibility = Visibility.Visible;
+        UpdateProgress.Value = 0;
+
+        var progress = new Progress<(long done, long total)>(p =>
+        {
+            if (p.total > 0) UpdateProgress.Value = p.done * 100.0 / p.total;
+            UpdateText.Text = p.total > 0 ? $"{DownloadManager.Size(p.done)} sur {DownloadManager.Size(p.total)}" : DownloadManager.Size(p.done);
+        });
+
+        try
+        {
+            await UpdateService.DownloadAndPrepareAsync(_update, progress, cts.Token);
+            UpdateTitle.Text = "Installation…";
+            UpdateText.Text = "BibiTV va redémarrer automatiquement.";
+            _player?.Close();
+            await Task.Delay(600);
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            _updateCts = null;
+            if (cts.IsCancellationRequested)
+                UpdateBanner.Visibility = Visibility.Collapsed;
+            else
+                ShowUpdateBanner("La mise à jour a échoué", ex.Message, canUpdate: true, canClose: true);
+        }
+    }
 
     // ===================== Favoris =====================
 
