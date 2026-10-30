@@ -23,7 +23,7 @@ jobs:
       - name: Publish (win-x64, autonome)
         shell: pwsh
         env:
-          TMDB_KEY: ${{ secrets.TMDB_KEY }}
+          TMDB_KEY: ${{ secrets.TMDB_KEY || secrets.TMDB8KEY }}
         run: dotnet publish src/BibiTv/BibiTv.csproj -c Release -r win-x64 --self-contained true -o publish/BibiTv "-p:TmdbKey=$env:TMDB_KEY"
 
       - name: Zip
