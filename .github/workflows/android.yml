@@ -1,0 +1,87 @@
+name: Build Android TV
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["android/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Clé de signature (secret)
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/bibitv.jks"
+            echo "BIBITV_KEYSTORE_FILE=$RUNNER_TEMP/bibitv.jks" >> "$GITHUB_ENV"
+            echo "Clé de signature : secret ANDROID_KEYSTORE_B64"
+          else
+            echo "::warning::Secret ANDROID_KEYSTORE_B64 absent : APK signé avec une clé temporaire"
+          fi
+
+      - name: Compiler l'APK
+        env:
+          TMDB_KEY: ${{ secrets.TMDB_KEY || secrets.TMDB8KEY }}
+          BIBITV_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Préparer les fichiers
+        id: v
+        run: |
+          v=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk out/BibiTV-androidtv.apk
+          cp out/BibiTV-androidtv.apk out/bibitv.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BibiTV-androidtv
+          path: android/out/BibiTV-androidtv.apk
+
+      # Release versionnée : utilisée par la mise à jour intégrée de l'app
+      - name: Release versionnée
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v${{ steps.v.outputs.version }}
+          name: BibiTV Android TV v${{ steps.v.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          files: android/out/BibiTV-androidtv.apk
+          body: |
+            Application Android TV. Installation : voir le lien fixe de la release « android ».
+
+      # Lien fixe pour l'app Downloader sur la TV (toujours la dernière version)
+      - name: Lien fixe (Downloader)
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android
+          name: BibiTV Android TV (dernière version)
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          files: android/out/bibitv.apk
+          body: |
+            Lien à saisir dans l'app Downloader de la TV :
+            https://github.com/Bilou691/BibiTv/releases/download/android/bibitv.apk

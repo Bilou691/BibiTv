@@ -95,3 +95,20 @@ src/BibiTv/
 ├── Views/MainWindow.*          Connexion, navigation, fiche détail
 └── Views/PlayerWindow.*        Lecteur LibVLC plein écran
 ```
+
+## Android TV
+
+Le dossier `android/` contient la même application pour Android TV (Kotlin, Jetpack Compose, LibVLC) :
+décodage matériel 4K HEVC, adaptation de la fréquence de l'écran (24p), télécommande, téléchargements
+vers une clé USB, mise à jour intégrée.
+
+**Installer sur la TV avec l'app Downloader** : saisir
+`https://github.com/Bilou691/BibiTv/releases/download/android/bibitv.apk`
+
+Secrets GitHub utilisés par le workflow `Build Android TV` :
+
+| Secret | Rôle |
+|---|---|
+| `ANDROID_KEYSTORE_B64` | clé de signature (keystore encodé en Base64) — indispensable pour les mises à jour |
+| `ANDROID_KEYSTORE_PASSWORD` | mot de passe de la clé |
+| `TMDB_KEY` | jeton TMDB (Top 10 de la semaine) |
