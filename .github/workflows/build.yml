@@ -1,0 +1,39 @@
+name: Build Windows
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish (win-x64, autonome)
+        run: dotnet publish src/BibiTv/BibiTv.csproj -c Release -r win-x64 --self-contained true -o publish/BibiTv
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path publish/BibiTv/* -DestinationPath publish/BibiTv-win-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BibiTv-win-x64
+          path: publish/BibiTv/
+
+      - name: Release (tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: publish/BibiTv-win-x64.zip

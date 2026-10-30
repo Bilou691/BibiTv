@@ -1,0 +1,137 @@
+<Window x:Class="BibiTv.Views.PlayerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
+        Title="BibiTV" Width="1280" Height="720" MinWidth="640" MinHeight="360"
+        Background="Black" WindowStyle="None" WindowState="Maximized" ResizeMode="CanResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="True">
+
+    <vlc:VideoView x:Name="Video" Background="Black">
+        <!-- Le contenu d'un VideoView est affiché dans une fenêtre transparente au-dessus de la vidéo -->
+        <Grid x:Name="Overlay" Background="#01000000" MouseMove="Overlay_MouseMove"
+              MouseLeftButtonDown="Overlay_MouseLeftButtonDown" MouseWheel="Overlay_MouseWheel">
+
+            <!-- Indicateurs centraux -->
+            <StackPanel x:Name="BufferingPanel" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                <Ellipse Width="48" Height="48" StrokeThickness="4" StrokeDashArray="18 30" StrokeDashCap="Round"
+                         RenderTransformOrigin="0.5,0.5" Stroke="White">
+                    <Ellipse.RenderTransform>
+                        <RotateTransform x:Name="SpinnerRotate" />
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetName="SpinnerRotate" Storyboard.TargetProperty="Angle"
+                                                     From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever" />
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+                <TextBlock x:Name="BufferingText" Text="Chargement…" Foreground="#CCFFFFFF" FontSize="15" Margin="0,16,0,0"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+
+            <Border x:Name="ErrorPanel" Background="#CC1C1C1E" CornerRadius="16" Padding="28,22" Visibility="Collapsed"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+                    <TextBlock Text="Lecture impossible" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                    <TextBlock x:Name="ErrorText" FontSize="14" Foreground="#AEAEB2" Margin="0,8,0,16" TextWrapping="Wrap"
+                               MaxWidth="420" TextAlignment="Center" />
+                    <Button Content="Réessayer" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Center" Click="Retry_Click" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock x:Name="Osd" FontSize="28" FontWeight="SemiBold" Foreground="White" Opacity="0"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+
+            <!-- Contrôles (masqués automatiquement) -->
+            <Grid x:Name="Chrome">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Haut -->
+                <Grid>
+                    <Grid.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#B3000000" Offset="0" />
+                            <GradientStop Color="#00000000" Offset="1" />
+                        </LinearGradientBrush>
+                    </Grid.Background>
+                    <Grid Margin="40,28,40,48">
+                        <StackPanel>
+                            <TextBlock x:Name="TitleText" FontSize="26" FontWeight="Bold" />
+                            <TextBlock x:Name="SubtitleText" FontSize="15" Foreground="#CCFFFFFF" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <Button Content="&#xE8BB;" Style="{StaticResource RoundIconButton}" FontSize="14" HorizontalAlignment="Right"
+                                VerticalAlignment="Top" ToolTip="Fermer (Échap)" Click="Close_Click" />
+                    </Grid>
+                </Grid>
+
+                <!-- Bas -->
+                <Grid Grid.Row="2">
+                    <Grid.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#00000000" Offset="0" />
+                            <GradientStop Color="#CC000000" Offset="1" />
+                        </LinearGradientBrush>
+                    </Grid.Background>
+                    <StackPanel Margin="40,60,40,30">
+                        <Grid x:Name="SeekRow" Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="TimeText" Text="0:00" FontSize="13" Foreground="#CCFFFFFF" VerticalAlignment="Center"
+                                       MinWidth="56" />
+                            <Slider x:Name="SeekBar" Grid.Column="1" Style="{StaticResource SeekSlider}" Minimum="0" Maximum="1000"
+                                    LargeChange="10" VerticalAlignment="Center" Margin="12,0"
+                                    PreviewMouseLeftButtonDown="SeekBar_MouseDown" PreviewMouseLeftButtonUp="SeekBar_MouseUp"
+                                    ValueChanged="SeekBar_ValueChanged" />
+                            <TextBlock x:Name="DurationText" Grid.Column="2" Text="0:00" FontSize="13" Foreground="#CCFFFFFF"
+                                       VerticalAlignment="Center" MinWidth="56" TextAlignment="Right" />
+                        </Grid>
+                        <TextBlock x:Name="LiveBadge" Text="●  EN DIRECT" FontSize="12" FontWeight="Bold" Foreground="#FF453A"
+                                   Margin="0,0,0,14" Visibility="Collapsed" />
+
+                        <Grid>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                <Button x:Name="AudioButton" Content="&#xE8D6;" Style="{StaticResource RoundIconButton}" ToolTip="Langue audio"
+                                        Click="Audio_Click" />
+                                <Button x:Name="SubsButton" Content="&#xE7F0;" Style="{StaticResource RoundIconButton}" Margin="10,0,0,0"
+                                        ToolTip="Sous-titres" Click="Subs_Click" />
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <Button x:Name="PrevButton" Content="&#xE892;" Style="{StaticResource RoundIconButton}" ToolTip="Précédent (Page préc.)"
+                                        Click="Prev_Click" />
+                                <Button x:Name="BackButton" Content="&#xED3C;" Style="{StaticResource RoundIconButton}" Margin="14,0,0,0"
+                                        ToolTip="Reculer de 10 s (←)" Click="Back_Click" />
+                                <Button x:Name="PlayPauseButton" Content="&#xE769;" Style="{StaticResource RoundIconButton}" Margin="14,0"
+                                        Width="62" Height="62" FontSize="24" ToolTip="Lecture / Pause (Espace)" Click="PlayPause_Click" />
+                                <Button x:Name="FwdButton" Content="&#xED3D;" Style="{StaticResource RoundIconButton}" Margin="0,0,14,0"
+                                        ToolTip="Avancer de 30 s (→)" Click="Fwd_Click" />
+                                <Button x:Name="NextButton" Content="&#xE893;" Style="{StaticResource RoundIconButton}" ToolTip="Suivant (Page suiv.)"
+                                        Click="Next_Click" />
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <Button x:Name="MuteButton" Content="&#xE767;" Style="{StaticResource RoundIconButton}" ToolTip="Muet (M)"
+                                        Click="Mute_Click" />
+                                <Slider x:Name="VolumeBar" Style="{StaticResource SeekSlider}" Width="110" Minimum="0" Maximum="100"
+                                        VerticalAlignment="Center" Margin="12,0,18,0" ValueChanged="Volume_ValueChanged" />
+                                <Button x:Name="FullscreenButton" Content="&#xE73F;" Style="{StaticResource RoundIconButton}"
+                                        ToolTip="Plein écran (F)" Click="Fullscreen_Click" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Grid>
+    </vlc:VideoView>
+</Window>
