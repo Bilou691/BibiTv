@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -295,16 +296,18 @@ private fun CatalogScreen(vm: AppViewModel, section: Section) {
                     modifier = Modifier.weight(1f, fill = false))
                 Text(if (list.size == 1) "1 élément" else "${list.size} éléments", color = C.Text2, fontSize = 15.sp, modifier = Modifier.padding(start = 12.dp))
                 Spacer(Modifier.weight(1f))
-                OutlinedTextField(
-                    query, { vm.catalogQuery[section] = it; scope.launch { gridState.scrollToItem(0) } }, placeholder = { Text("Rechercher") }, singleLine = true,
-                    shape = RoundedCornerShape(22.dp), modifier = Modifier.width(300.dp),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = C.Text, unfocusedTextColor = C.Text, focusedContainerColor = C.Surface, unfocusedContainerColor = C.Surface,
-                        focusedBorderColor = Color.White, unfocusedBorderColor = Color.Transparent, cursorColor = Color.White,
-                        focusedPlaceholderColor = C.Text2, unfocusedPlaceholderColor = C.Text2,
-                    ),
-                )
+                // Bouton plutôt qu'un champ : le clavier ne s'ouvre que sur appui (pas au passage des flèches).
+                var searchOpen by remember { mutableStateOf(false) }
+                PillButton(if (query.isBlank()) "🔍  Rechercher" else "🔍  « ${query.trim()} »", { searchOpen = true })
+                if (query.isNotBlank()) {
+                    Spacer(Modifier.width(8.dp))
+                    PillButton("✕", { vm.catalogQuery[section] = ""; scope.launch { gridState.scrollToItem(0) } })
+                }
+                if (searchOpen) SearchDialog(query, onDismiss = { searchOpen = false }) { q ->
+                    searchOpen = false
+                    vm.catalogQuery[section] = q
+                    scope.launch { gridState.scrollToItem(0) }
+                }
                 if (section != Section.Live) {
                     Spacer(Modifier.width(12.dp))
                     val hide = ProfileStore.profile.hideWatched
@@ -412,4 +415,34 @@ private fun UpdateBanner(vm: AppViewModel, modifier: Modifier) {
             PillButton("Mettre à jour", { vm.startUpdate() }, primary = true)
         }
     }
+}
+
+/** Fenêtre de recherche (fenêtre séparée : le focus ne peut pas s'échapper vers la grille). */
+@Composable
+private fun SearchDialog(initial: String, onDismiss: () -> Unit, onSearch: (String) -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    val field = remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(Modifier.width(560.dp).clip(RoundedCornerShape(20.dp)).background(C.Surface).padding(26.dp)) {
+            Text("Rechercher", color = C.Text, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                text, { text = it }, placeholder = { Text("Titre d'un film, d'une série, d'une chaîne…") }, singleLine = true,
+                shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().focusRequester(field),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { onSearch(text.trim()) }, onDone = { onSearch(text.trim()) }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = C.Text, unfocusedTextColor = C.Text, focusedContainerColor = C.Surface2, unfocusedContainerColor = C.Surface2,
+                    focusedBorderColor = Color.White, unfocusedBorderColor = Color.Transparent, cursorColor = Color.White,
+                    focusedPlaceholderColor = C.Text2, unfocusedPlaceholderColor = C.Text2,
+                ),
+            )
+            Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PillButton("Rechercher", { onSearch(text.trim()) }, primary = true)
+                PillButton("Effacer", { onSearch("") })
+                PillButton("Annuler", onDismiss)
+            }
+        }
+    }
+    LaunchedEffect(Unit) { runCatching { field.requestFocus() } }
 }

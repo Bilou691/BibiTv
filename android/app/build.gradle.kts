@@ -24,8 +24,8 @@ android {
         applicationId = "com.bibitv.tv"
         minSdk = 23
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.0.3"
         buildConfigField("String", "TMDB_KEY", "\"$tmdbKey\"")
         ndk {
             // Box et TV Android : ARM 32 et 64 bits
