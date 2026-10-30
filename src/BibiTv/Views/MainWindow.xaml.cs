@@ -936,25 +936,22 @@ public partial class MainWindow : Window
         DoubleAnimation A(double from, double to, double begin, double dur, IEasingFunction? e = null) =>
             new(from, to, TimeSpan.FromSeconds(dur)) { BeginTime = TimeSpan.FromSeconds(begin), EasingFunction = e ?? ease };
 
-        SplashLogo.BeginAnimation(OpacityProperty, A(0, 1, 0.15, 0.7));
-        var pop = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.35 };
-        SplashScale.BeginAnimation(ScaleTransform.ScaleXProperty, A(0.82, 1, 0.15, 0.95, pop));
-        SplashScale.BeginAnimation(ScaleTransform.ScaleYProperty, A(0.82, 1, 0.15, 0.95, pop));
-
-        var glow = new DoubleAnimationUsingKeyFrames();
-        glow.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(0.2))));
-        glow.KeyFrames.Add(new EasingDoubleKeyFrame(0.9, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(1.0)), ease));
-        glow.KeyFrames.Add(new EasingDoubleKeyFrame(0.45, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(1.8)), ease));
-        SplashGlow.BeginAnimation(System.Windows.Media.Effects.DropShadowEffect.OpacityProperty, glow);
+        // Décor qui s'allume, logo qui « pop », reflet sur l'écran, puis le nom et son reflet au sol.
+        SplashBg.BeginAnimation(OpacityProperty, A(0, 1, 0, 0.9));
+        SplashLogo.BeginAnimation(OpacityProperty, A(0, 1, 0.25, 0.7));
+        var pop = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 };
+        SplashScale.BeginAnimation(ScaleTransform.ScaleXProperty, A(0.86, 1, 0.25, 1.0, pop));
+        SplashScale.BeginAnimation(ScaleTransform.ScaleYProperty, A(0.86, 1, 0.25, 1.0, pop));
 
         var sineInOut = new SineEase { EasingMode = EasingMode.EaseInOut };
-        SplashSweep.BeginAnimation(TranslateTransform.XProperty, A(-1.2, 1.2, 0.85, 0.9, sineInOut));
-        SplashSweep.BeginAnimation(TranslateTransform.YProperty, A(-1.2, 1.2, 0.85, 0.9, sineInOut));
+        SplashSweep.BeginAnimation(TranslateTransform.XProperty, A(-1.2, 1.2, 1.0, 0.9, sineInOut));
+        SplashSweep.BeginAnimation(TranslateTransform.YProperty, A(-1.2, 1.2, 1.0, 0.9, sineInOut));
 
-        SplashWord.BeginAnimation(OpacityProperty, A(0, 1, 1.0, 0.6));
-        SplashWordShift.BeginAnimation(TranslateTransform.YProperty, A(14, 0, 1.0, 0.7));
+        SplashWord.BeginAnimation(OpacityProperty, A(0, 1, 1.15, 0.7));
+        SplashWordShift.BeginAnimation(TranslateTransform.YProperty, A(16, 0, 1.15, 0.8));
+        SplashFloor.BeginAnimation(OpacityProperty, A(0, 1, 1.35, 0.9));
 
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.7) };
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3.1) };
         timer.Tick += (_, _) => { timer.Stop(); HideSplash(); };
         timer.Start();
     }

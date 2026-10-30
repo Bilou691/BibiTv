@@ -1083,40 +1083,46 @@
         </Grid>
 
         <!-- ===================== JINGLE D'OUVERTURE (silencieux) ===================== -->
+        <!-- Composition d'origine 1672×941 : décor, logo, texte et reflet au sol animés séparément -->
         <Grid x:Name="SplashView" Background="Black" MouseLeftButtonDown="Splash_Skip" Cursor="Hand">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Grid x:Name="SplashLogo" Width="168" Height="168" RenderTransformOrigin="0.5,0.5" Opacity="0">
-                    <Grid.RenderTransform>
-                        <ScaleTransform x:Name="SplashScale" ScaleX="0.82" ScaleY="0.82" />
-                    </Grid.RenderTransform>
-                    <Grid.Effect>
-                        <DropShadowEffect x:Name="SplashGlow" Color="#5E5CE6" BlurRadius="90" ShadowDepth="0" Opacity="0" />
-                    </Grid.Effect>
-                    <Image Source="/Assets/BibiTv.png" RenderOptions.BitmapScalingMode="HighQuality" />
-                    <!-- Reflet qui balaie le logo -->
-                    <Rectangle>
-                        <Rectangle.OpacityMask>
-                            <ImageBrush ImageSource="/Assets/BibiTv.png" />
-                        </Rectangle.OpacityMask>
-                        <Rectangle.Fill>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <LinearGradientBrush.RelativeTransform>
-                                    <TranslateTransform x:Name="SplashSweep" X="-1.2" Y="-1.2" />
-                                </LinearGradientBrush.RelativeTransform>
-                                <GradientStop Color="#00FFFFFF" Offset="0.35" />
-                                <GradientStop Color="#99FFFFFF" Offset="0.5" />
-                                <GradientStop Color="#00FFFFFF" Offset="0.65" />
-                            </LinearGradientBrush>
-                        </Rectangle.Fill>
-                    </Rectangle>
+            <Viewbox Stretch="UniformToFill">
+                <Grid Width="1672" Height="941">
+                    <Image x:Name="SplashBg" Source="/Assets/Splash/background.jpg" Opacity="0" />
+
+                    <Grid x:Name="SplashLogo" Width="530" Height="380" Margin="560,160,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"
+                          RenderTransformOrigin="0.5,0.5" Opacity="0">
+                        <Grid.RenderTransform>
+                            <ScaleTransform x:Name="SplashScale" ScaleX="0.86" ScaleY="0.86" />
+                        </Grid.RenderTransform>
+                        <Image Source="/Assets/Splash/icon_layer.png" />
+                        <!-- Reflet qui balaie l'écran du logo -->
+                        <Rectangle>
+                            <Rectangle.OpacityMask>
+                                <ImageBrush ImageSource="/Assets/Splash/icon_layer.png" />
+                            </Rectangle.OpacityMask>
+                            <Rectangle.Fill>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <LinearGradientBrush.RelativeTransform>
+                                        <TranslateTransform x:Name="SplashSweep" X="-1.2" Y="-1.2" />
+                                    </LinearGradientBrush.RelativeTransform>
+                                    <GradientStop Color="#00FFFFFF" Offset="0.38" />
+                                    <GradientStop Color="#B3FFFFFF" Offset="0.5" />
+                                    <GradientStop Color="#00FFFFFF" Offset="0.62" />
+                                </LinearGradientBrush>
+                            </Rectangle.Fill>
+                        </Rectangle>
+                    </Grid>
+
+                    <Image x:Name="SplashWord" Source="/Assets/Splash/text_layer.png" Width="530" Height="180" Margin="560,540,0,0"
+                           HorizontalAlignment="Left" VerticalAlignment="Top" Opacity="0">
+                        <Image.RenderTransform>
+                            <TranslateTransform x:Name="SplashWordShift" Y="16" />
+                        </Image.RenderTransform>
+                    </Image>
+                    <Image x:Name="SplashFloor" Source="/Assets/Splash/floor_layer.png" Width="540" Height="203" Margin="560,738,0,0"
+                           HorizontalAlignment="Left" VerticalAlignment="Top" Opacity="0" />
                 </Grid>
-                <TextBlock x:Name="SplashWord" Text="BibiTV" FontSize="46" FontWeight="Bold" HorizontalAlignment="Center"
-                           Margin="0,28,0,0" Opacity="0">
-                    <TextBlock.RenderTransform>
-                        <TranslateTransform x:Name="SplashWordShift" Y="14" />
-                    </TextBlock.RenderTransform>
-                </TextBlock>
-            </StackPanel>
+            </Viewbox>
         </Grid>
     </Grid>
 </Window>
