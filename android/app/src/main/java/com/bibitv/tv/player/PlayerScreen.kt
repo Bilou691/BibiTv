@@ -395,7 +395,9 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
         }
 
         osd?.let {
-            Text(it, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
+            Text(it, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.align(Alignment.Center).padding(horizontal = 80.dp).clip(RoundedCornerShape(14.dp))
+                    .background(Color(0x99000000)).padding(horizontal = 20.dp, vertical = 10.dp))
         }
 
         error?.let { msg ->
@@ -438,12 +440,13 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                             Text(fmt(length), color = Color(0xCCFFFFFF), fontSize = 14.sp, modifier = Modifier.width(70.dp).padding(start = 12.dp))
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (req.playlist.size > 1) PillButton(if (req.isLive) "◀  Chaîne préc." else "◀  Précédent", { step(-1) })
-                        if (!req.isLive) PillButton("−10 s", { seekBy(-10) })
-                        PillButton(if (playing) "❚❚  Pause" else "▶  Lecture", { togglePause() }, Modifier.focusRequester(playFocus), primary = true)
-                        if (!req.isLive) PillButton("+30 s", { seekBy(30) })
-                        if (req.playlist.size > 1) PillButton(if (req.isLive) "Chaîne suiv.  ▶" else "Suivant  ▶", { step(1) })
+                    // Boutons compacts : tout tient sur la largeur de l'écran
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (req.playlist.size > 1) PillButton("⏮", { step(-1) }, compact = true)
+                        if (!req.isLive) PillButton("−10 s", { seekBy(-10) }, compact = true)
+                        PillButton(if (playing) "❚❚  Pause" else "▶  Lecture", { togglePause() }, Modifier.focusRequester(playFocus), primary = true, compact = true)
+                        if (!req.isLive) PillButton("+30 s", { seekBy(30) }, compact = true)
+                        if (req.playlist.size > 1) PillButton("⏭", { step(1) }, compact = true)
                         Spacer(Modifier.weight(1f))
                         PillButton("Infos", {
                             val vt = mp.currentVideoTrack
@@ -455,10 +458,10 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                                     (if (vt.width >= 3800) "  ·  4K" else ""),
                                 4000,
                             )
-                        })
-                        PillButton("Format : ${formatName(format)}", { cycleFormat() })
-                        PillButton("Audio", { tracksMenu(true) })
-                        PillButton("Sous-titres", { tracksMenu(false) })
+                        }, compact = true)
+                        PillButton(formatName(format), { cycleFormat() }, compact = true)
+                        PillButton("Audio", { tracksMenu(true) }, compact = true)
+                        PillButton("Sous-titres", { tracksMenu(false) }, compact = true)
                     }
                 }
             }

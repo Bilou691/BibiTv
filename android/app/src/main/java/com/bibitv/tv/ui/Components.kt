@@ -106,6 +106,7 @@ fun PillButton(
     primary: Boolean = false,
     activeColor: Color? = null,
     onFocus: (() -> Unit)? = null,
+    compact: Boolean = false,
 ) {
     Focusable(onClick, modifier, onFocus = onFocus, shape = RoundedCornerShape(24.dp), focusedScale = 1.05f, borderWidth = 0.dp) { focused ->
         val bg = when {
@@ -115,8 +116,8 @@ fun PillButton(
             else -> Color(0x26FFFFFF)
         }
         val fg = if (focused || ((primary || selected) && activeColor == null)) Color(0xFF0A0A0C) else C.Text
-        Box(Modifier.background(bg).padding(horizontal = 22.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(text, color = fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Box(Modifier.background(bg).padding(horizontal = if (compact) 16.dp else 22.dp, vertical = if (compact) 8.dp else 10.dp), contentAlignment = Alignment.Center) {
+            Text(text, color = fg, fontSize = if (compact) 15.sp else 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
 }
