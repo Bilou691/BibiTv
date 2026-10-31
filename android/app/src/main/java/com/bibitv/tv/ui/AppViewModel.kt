@@ -304,7 +304,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // Chaîne « BibiTV » sur l'accueil de la TV : Top 10 films puis suggestions
             val ctx = getApplication<Application>()
             val channelItems = topMovies.map { it.item } + Recommendations.suggest(movies) + topSeries.map { it.item }
-            launch(Dispatchers.IO) { com.bibitv.tv.data.TvHome.publishChannel(ctx, channelItems) }
+            launch(Dispatchers.IO) {
+                com.bibitv.tv.data.TvHome.publishChannel(ctx, channelItems)
+                com.bibitv.tv.data.HomeProvider.saveSuggestions(ctx, channelItems)
+            }
             if (hero != null) {
                 try {
                     heroInfo = client?.movieInfo(hero.variants.firstOrNull()?.id ?: hero.id)

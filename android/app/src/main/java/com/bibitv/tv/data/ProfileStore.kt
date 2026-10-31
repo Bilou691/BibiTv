@@ -52,6 +52,7 @@ object ProfileStore {
     private const val MAX_HISTORY = 60
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private lateinit var file: File
+    private var appContext: Context? = null
 
     var profile = UserProfile()
         private set
@@ -60,12 +61,19 @@ object ProfileStore {
     val revision = mutableIntStateOf(0)
 
     fun init(context: Context) {
+        appContext = context.applicationContext
         file = File(context.filesDir, "profile.json")
         profile = try {
             if (file.exists()) json.decodeFromString(file.readText()) else UserProfile()
         } catch (e: Exception) {
             UserProfile()
         }
+    }
+
+    /** Le fournisseur de l'accueil peut être interrogé avant Application.onCreate. */
+    @Synchronized
+    fun ensureInit(context: Context) {
+        if (!::file.isInitialized) init(context)
     }
 
     @Synchronized
@@ -75,6 +83,7 @@ object ProfileStore {
             file.writeText(json.encodeToString(profile))
         } catch (_: Exception) {
         }
+        appContext?.let { HomeProvider.notifyChanged(it, HomeProvider.resumeUri) }
     }
 
     fun episodeKey(episodeId: String) = "Ep:$episodeId"

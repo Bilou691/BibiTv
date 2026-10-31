@@ -50,6 +50,13 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Rangées « Reprendre » et « Pour toi » pour l'écran d'accueil perso de la TV
+             (lecture seule, réservée au lanceur autorisé dans HomeProvider) -->
+        <provider
+            android:name=".data.HomeProvider"
+            android:authorities="com.bibitv.tv.home"
+            android:exported="true" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"
