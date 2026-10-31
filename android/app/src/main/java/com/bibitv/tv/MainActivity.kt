@@ -50,6 +50,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        intent?.data?.let { vm.handleLink(it) }
         setContent { AppRoot(vm) }
+    }
+
+    /** Lien direct reçu alors que BibiTV est déjà ouverte (activité singleTask). */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        intent.data?.let { vm.handleLink(it) }
     }
 }

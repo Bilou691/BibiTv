@@ -17,6 +17,7 @@ import com.bibitv.tv.data.MediaItem
 import com.bibitv.tv.data.MovieInfo
 import com.bibitv.tv.data.ProfileStore
 import com.bibitv.tv.data.RankedItem
+import com.bibitv.tv.data.Recommendations
 import com.bibitv.tv.data.Section
 import com.bibitv.tv.data.SeriesInfo
 import com.bibitv.tv.data.SettingsStore
@@ -299,6 +300,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val hero = topMovies.firstOrNull()?.item
             home = HomeData(hero, topMovies, mTmdb, topSeries, sTmdb, topChannels, errors.distinct())
             heroInfo = null
+            processLink()
+            // Chaîne « BibiTV » sur l'accueil de la TV : Top 10 films puis suggestions
+            val ctx = getApplication<Application>()
+            val channelItems = topMovies.map { it.item } + Recommendations.suggest(movies) + topSeries.map { it.item }
+            launch(Dispatchers.IO) { com.bibitv.tv.data.TvHome.publishChannel(ctx, channelItems) }
             if (hero != null) {
                 try {
                     heroInfo = client?.movieInfo(hero.variants.firstOrNull()?.id ?: hero.id)
@@ -399,7 +405,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Appelé par le lecteur quand une entrée démarre. */
     fun onEntryStarted(e: PlaylistEntry) {
-        e.history?.let { ProfileStore.touch(it.copy()) }
+        e.history?.let {
+            val entry = it.copy()
+            ProfileStore.touch(entry)
+            publishWatchNext(entry, finished = false)
+        }
+    }
+
+    private fun publishWatchNext(h: HistoryEntry, finished: Boolean) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) { com.bibitv.tv.data.TvHome.publishWatchNext(ctx, h, finished) }
+    }
+
+    // =================== Liens directs (accueil de la TV) ===================
+
+    private var pendingLink: android.net.Uri? = null
+
+    /** bibitv://fiche?key=… ouvre une fiche, bibitv://reprendre?key=… reprend la lecture. */
+    fun handleLink(uri: android.net.Uri) {
+        if (uri.scheme != com.bibitv.tv.data.TvHome.SCHEME) return
+        pendingLink = uri
+        if (home != null) processLink()
+    }
+
+    private fun processLink() {
+        val uri = pendingLink ?: return
+        pendingLink = null
+        val key = uri.getQueryParameter("key")
+        when (uri.host) {
+            "reprendre" -> {
+                val h = ProfileStore.profile.history.firstOrNull { it.key == key }
+                if (h != null) resume(h, ProfileStore.profile.history.toList())
+                else byKey[key]?.let { open(it) }
+            }
+            "fiche" -> byKey[key]?.let { player = null; open(it) }
+            else -> { player = null; detail = null; tab = Tab.Home }
+        }
     }
 
     /** Progression d'une entrée (VOD) : historique + « déjà vu » au-delà de 92 %. */
@@ -413,6 +454,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             ProfileStore.profile.watched.add(watchKey)
         }
         ProfileStore.touch(entry)
+        publishWatchNext(entry, finished)
     }
 
     // =================== Fiche détail ===================
@@ -539,7 +581,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun historyMenu(h: HistoryEntry) {
-        menu = MenuRequest(h.title, listOf("Retirer de l'historique" to { ProfileStore.removeHistory(h.key) }))
+        menu = MenuRequest(h.title, listOf("Retirer de l'historique" to {
+            ProfileStore.removeHistory(h.key)
+            val ctx = getApplication<Application>()
+            viewModelScope.launch(Dispatchers.IO) { com.bibitv.tv.data.TvHome.removeWatchNext(ctx, h.key) }
+            Unit
+        }))
     }
 
     // =================== Programme TV ===================

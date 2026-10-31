@@ -24,8 +24,8 @@ android {
         applicationId = "com.bibitv.tv"
         minSdk = 23
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.0.5"
+        versionCode = 7
+        versionName = "1.1.0"
         buildConfigField("String", "TMDB_KEY", "\"$tmdbKey\"")
         ndk {
             // Box et TV Android : ARM 32 et 64 bits
@@ -83,6 +83,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("androidx.tvprovider:tvprovider:1.0.0")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
