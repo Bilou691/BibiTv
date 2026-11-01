@@ -307,6 +307,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             launch(Dispatchers.IO) {
                 com.bibitv.tv.data.TvHome.publishChannel(ctx, channelItems)
                 com.bibitv.tv.data.HomeProvider.saveSuggestions(ctx, channelItems)
+                com.bibitv.tv.data.HomeProvider.saveTop(ctx, topMovies, topSeries)
             }
             if (hero != null) {
                 try {

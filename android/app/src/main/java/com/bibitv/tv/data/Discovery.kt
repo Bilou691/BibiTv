@@ -24,6 +24,10 @@ data class RankedItem(val rank: Int, val item: MediaItem)
 object TopService {
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** Image large (paysage) et résumé TMDB des titres du Top, par clé de fiche. */
+    data class Artwork(val backdrop: String?, val overview: String?)
+    val artwork = java.util.concurrent.ConcurrentHashMap<String, Artwork>()
+
     suspend fun top(kind: Section, catalog: List<MediaItem>): Pair<List<RankedItem>, Boolean> {
         val key = BuildConfig.TMDB_KEY
         if (key.isNotBlank()) {
@@ -52,7 +56,10 @@ object TopService {
 
     private fun score(i: MediaItem) = (i.rating?.toDoubleOrNull() ?: 0.0) + min(i.variants.size, 4) * 0.15
 
-    private data class Trend(val id: String, val title: String, val original: String?, val year: String?)
+    private data class Trend(
+        val id: String, val title: String, val original: String?, val year: String?,
+        val backdrop: String?, val overview: String?,
+    )
 
     private suspend fun trending(kind: Section, key: String): List<Trend> = withContext(Dispatchers.IO) {
         val type = if (kind == Section.Series) "tv" else "movie"
@@ -69,7 +76,10 @@ object TopService {
                     val o = r.jsonObject
                     fun s(n: String) = (o[n] as? JsonPrimitive)?.takeIf { it.isString }?.content
                     val date = s("release_date") ?: s("first_air_date")
-                    result += Trend(o["id"].toString(), s("title") ?: s("name") ?: "", s("original_title") ?: s("original_name"), yearOf(date))
+                    result += Trend(
+                        o["id"].toString(), s("title") ?: s("name") ?: "", s("original_title") ?: s("original_name"), yearOf(date),
+                        s("backdrop_path")?.let { "https://image.tmdb.org/t/p/w1280$it" }, s("overview")?.takeIf { it.isNotBlank() },
+                    )
                 }
             }
         }
@@ -93,7 +103,10 @@ object TopService {
                     break
                 }
             }
-            if (found != null && found !in out) out += found
+            if (found != null && found !in out) {
+                out += found
+                artwork[found.key] = Artwork(t.backdrop, t.overview)
+            }
             if (out.size == 10) break
         }
         return out
