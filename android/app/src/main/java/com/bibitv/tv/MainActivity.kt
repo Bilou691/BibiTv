@@ -51,9 +51,6 @@ class BibiApp : Application(), ImageLoaderFactory {
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
 
-    private val notificationPermission =
-        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Device.isTv) {
@@ -67,7 +64,7 @@ class MainActivity : ComponentActivity() {
         vm.requestNotificationPermission = {
             if (android.os.Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) runCatching { notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+            ) runCatching { requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1) }
         }
         intent?.data?.let { vm.handleLink(it) }
         setContent { AppRoot(vm) }
