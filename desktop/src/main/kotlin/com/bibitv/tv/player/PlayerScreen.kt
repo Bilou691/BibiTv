@@ -208,11 +208,9 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                 override fun allocatedBuffers(buffers: Array<out ByteBuffer>) {}
             }
             val renderCallback = object : RenderCallback {
-                override fun lock(mediaPlayer: MediaPlayer) {}
                 override fun display(mediaPlayer: MediaPlayer, nativeBuffers: Array<out ByteBuffer>, bufferFormat: BufferFormat) {
                     frames.display(nativeBuffers[0])
                 }
-                override fun unlock(mediaPlayer: MediaPlayer) {}
             }
             p.videoSurface().set(factory.videoSurfaces().newVideoSurface(formatCallback, renderCallback, true))
         }
