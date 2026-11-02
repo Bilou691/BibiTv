@@ -3,7 +3,7 @@ name: Build Android TV
 on:
   push:
     branches: ["**"]
-    paths: ["android/**", ".github/workflows/android.yml"]
+    paths: ["android/**", "shared/**", "version.properties", ".github/workflows/android.yml"]
   workflow_dispatch:
 
 permissions:
@@ -48,7 +48,7 @@ jobs:
       - name: Préparer les fichiers
         id: v
         run: |
-          v=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          v=$(grep -oP '^versionName=\K.+' ../version.properties)
           echo "version=$v" >> "$GITHUB_OUTPUT"
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk out/BibiTV-androidtv.apk

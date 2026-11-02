@@ -7,6 +7,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// Version commune à toutes les plateformes (fichier version.properties à la racine du dépôt).
+val appVersion = java.util.Properties().apply { rootDir.resolve("../version.properties").inputStream().use { load(it) } }
+
 // Clé TMDB injectée à la compilation (secret GitHub), jamais écrite dans le code.
 val tmdbKey: String = (System.getenv("TMDB_KEY") ?: "").replace("\"", "")
 
@@ -24,8 +27,8 @@ android {
         applicationId = "com.bibitv.tv"
         minSdk = 23
         targetSdk = 35
-        versionCode = 13
-        versionName = "2.0.1"
+        versionCode = appVersion.getProperty("versionCode").toInt()
+        versionName = appVersion.getProperty("versionName")
         buildConfigField("String", "TMDB_KEY", "\"$tmdbKey\"")
         ndk {
             // Box et TV Android : ARM 32 et 64 bits
@@ -53,6 +56,9 @@ android {
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
+
+    // Code commun avec l'app desktop (macOS, Linux, Windows)
+    sourceSets["main"].java.srcDir("../../shared/src")
 
     buildFeatures {
         compose = true

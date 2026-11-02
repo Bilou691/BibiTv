@@ -1,11 +1,8 @@
-name: Build Windows
+# Ancienne app Windows (WPF / C#), remplacée par l'app desktop (dossier desktop/, workflow desktop.yml).
+# Compilation manuelle uniquement, sans publication : les PC Windows reçoivent désormais l'app desktop.
+name: Build Windows (ancienne app WPF)
 
 on:
-  push:
-    branches: ["**"]
-    tags: ["v*"]
-    paths-ignore: ["android/**", ".github/workflows/android.yml"]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -35,24 +32,3 @@ jobs:
         with:
           name: BibiTv-win-x64
           path: publish/BibiTv/
-
-      - name: Lire la version
-        id: version
-        shell: pwsh
-        run: |
-          $v = ([xml](Get-Content src/BibiTv/BibiTv.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
-          "tag=v$v" >> $env:GITHUB_OUTPUT
-
-      # Publie (ou met à jour) la release correspondant à la <Version> du .csproj
-      - name: Release
-        if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || steps.version.outputs.tag }}
-          name: BibiTV ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || steps.version.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          make_latest: true
-          files: publish/BibiTv-win-x64.zip
-          body: |
-            Téléchargez **BibiTv-win-x64.zip**, extrayez-le puis lancez `BibiTv.exe`.
-            Aucune installation nécessaire (.NET et VLC sont inclus).

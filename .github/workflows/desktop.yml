@@ -1,0 +1,125 @@
+name: Build Desktop (macOS, Linux, Windows)
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["desktop/**", "shared/**", "version.properties", ".github/workflows/desktop.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14          # Apple Silicon (arm64)
+            task: packageDmg
+            asset: BibiTV-macos-arm64.dmg
+          - os: ubuntu-latest
+            task: packageDeb
+            asset: BibiTV-linux-amd64.deb
+          - os: windows-latest
+            task: createDistributable
+            asset: BibiTv-win-x64.zip
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Icône macOS (.icns) générée depuis le PNG
+      - name: Icône macOS
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p icon.iconset
+          for s in 16 32 128 256 512; do
+            sips -z $s $s icons/BibiTv.png --out icon.iconset/icon_${s}x${s}.png >/dev/null
+            d=$((s*2)); sips -z $d $d icons/BibiTv.png --out icon.iconset/icon_${s}x${s}@2x.png >/dev/null
+          done
+          iconutil -c icns icon.iconset -o icons/BibiTv.icns
+
+      # VLC embarqué dans l'app Windows (libvlc + plugins)
+      - name: VLC pour Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = "3.0.21"
+          Invoke-WebRequest "https://get.videolan.org/vlc/$v/win64/vlc-$v-win64.zip" -OutFile vlc.zip
+          Expand-Archive vlc.zip -DestinationPath vlc-tmp
+          $src = "vlc-tmp/vlc-$v"
+          $dst = "appResources/windows/vlc"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item "$src/libvlc.dll", "$src/libvlccore.dll" $dst
+          Copy-Item "$src/plugins" "$dst/plugins" -Recurse
+          Remove-Item vlc.zip, vlc-tmp -Recurse -Force
+
+      - name: Compiler
+        env:
+          TMDB_KEY: ${{ secrets.TMDB_KEY || secrets.TMDB8KEY }}
+        run: |
+          chmod +x gradlew
+          ./gradlew ${{ matrix.task }} --no-daemon --stacktrace
+
+      - name: Préparer le fichier
+        run: |
+          mkdir -p out
+          case "${{ runner.os }}" in
+            macOS)   cp build/compose/binaries/main/dmg/*.dmg "out/${{ matrix.asset }}" ;;
+            Linux)   cp build/compose/binaries/main/deb/*.deb "out/${{ matrix.asset }}" ;;
+            Windows) (cd build/compose/binaries/main/app/BibiTv && 7z a -tzip "../../../../../../out/${{ matrix.asset }}" . >/dev/null) ;;
+          esac
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: desktop/out/${{ matrix.asset }}
+
+  # Release commune « v<version> » (dernière release du dépôt) : mise à jour intégrée des apps desktop,
+  # et des PC équipés de l'ancienne app Windows (elle télécharge BibiTv-win-x64.zip).
+  release:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version
+        id: v
+        run: echo "version=$(grep -oP '^versionName=\K.+' version.properties)" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          name: BibiTV ${{ steps.v.outputs.version }} (macOS, Linux, Windows)
+          target_commitish: ${{ github.sha }}
+          # Pré-version tant que l'app desktop n'est pas validée : les PC équipés de l'ancienne app
+          # Windows ne basculent pas encore. Passer à « false » / « true » pour la diffuser à tous.
+          prerelease: true
+          make_latest: false
+          files: |
+            dist/BibiTV-macos-arm64.dmg
+            dist/BibiTV-linux-amd64.deb
+            dist/BibiTv-win-x64.zip
+          body: |
+            **macOS (Apple Silicon)** : BibiTV-macos-arm64.dmg — ouvrir, glisser BibiTV dans Applications.
+            Premier lancement : clic droit sur BibiTV → Ouvrir (app non signée). VLC doit être installé (videolan.org).
+
+            **Linux (Ubuntu, Debian, Mint…)** : `sudo apt install ./BibiTV-linux-amd64.deb vlc`
+
+            **Windows** : BibiTv-win-x64.zip — extraire puis lancer BibiTv.exe (VLC inclus).
+            Les PC équipés de l'ancienne version se mettent à jour automatiquement.
