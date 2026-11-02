@@ -1,4 +1,5 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.util.Properties
 
 plugins {
     kotlin("jvm") version "2.0.21"
@@ -8,7 +9,7 @@ plugins {
 }
 
 // Version commune à toutes les plateformes (fichier version.properties à la racine du dépôt).
-val appVersion = java.util.Properties().apply { rootDir.resolve("../version.properties").inputStream().use { load(it) } }
+val appVersion = Properties().apply { rootDir.resolve("../version.properties").inputStream().use { load(it) } }
 val versionName: String = appVersion.getProperty("versionName")
 version = versionName
 

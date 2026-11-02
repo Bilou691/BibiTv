@@ -1,4 +1,5 @@
 import java.io.File
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -8,7 +9,7 @@ plugins {
 }
 
 // Version commune à toutes les plateformes (fichier version.properties à la racine du dépôt).
-val appVersion = java.util.Properties().apply { rootDir.resolve("../version.properties").inputStream().use { load(it) } }
+val appVersion = Properties().apply { rootDir.resolve("../version.properties").inputStream().use { load(it) } }
 
 // Clé TMDB injectée à la compilation (secret GitHub), jamais écrite dans le code.
 val tmdbKey: String = (System.getenv("TMDB_KEY") ?: "").replace("\"", "")

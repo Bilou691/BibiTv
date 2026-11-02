@@ -56,8 +56,10 @@ jobs:
         shell: pwsh
         run: |
           $v = "3.0.21"
-          Invoke-WebRequest "https://get.videolan.org/vlc/$v/win64/vlc-$v-win64.zip" -OutFile vlc.zip
-          Expand-Archive vlc.zip -DestinationPath vlc-tmp
+          $ErrorActionPreference = "Stop"
+          curl.exe -fL --retry 3 -o vlc.zip "https://download.videolan.org/pub/videolan/vlc/$v/win64/vlc-$v-win64.zip"
+          if ($LASTEXITCODE -ne 0) { throw "Téléchargement de VLC impossible" }
+          7z x vlc.zip -ovlc-tmp | Out-Null
           $src = "vlc-tmp/vlc-$v"
           $dst = "appResources/windows/vlc"
           New-Item -ItemType Directory -Force -Path $dst | Out-Null
