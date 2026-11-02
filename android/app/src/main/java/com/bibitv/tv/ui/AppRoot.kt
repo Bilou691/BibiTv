@@ -181,8 +181,10 @@ fun SplashScreen(onDone: () -> Unit) {
         Modifier.fillMaxSize().background(Color.Black).graphicsLayer { alpha = fade.value }.clickable { finish() },
         contentAlignment = Alignment.Center,
     ) {
-        // Échelle « remplir l'écran » de la composition 1672×941
-        val scale = maxOf(maxWidth.value / 1672f, maxHeight.value / 941f)
+        // Paysage (TV) : la composition 1672×941 remplit l'écran.
+        // Portrait (smartphone) : le logo (≈ 540 px de large) occupe ~75 % de la largeur, sans déborder en hauteur.
+        val scale = if (maxWidth < maxHeight) minOf(maxWidth.value * 0.75f / 540f, maxHeight.value / 941f)
+        else maxOf(maxWidth.value / 1672f, maxHeight.value / 941f)
         Box(Modifier.requiredSize((1672 * scale).dp, (941 * scale).dp)) {
             Image(painterResource(R.drawable.splash_background), null, contentScale = ContentScale.FillBounds,
                 modifier = Modifier.fillMaxSize().graphicsLayer { alpha = bg.value })
