@@ -194,14 +194,26 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
         time = 0; length = 0; error = null; buffering = true; playing = false; seekable = false
         subtitle = e.subtitle
         state.pfd?.close(); state.pfd = null
-        val media = when {
-            e.url.startsWith("content://") -> {
-                val pfd = context.contentResolver.openFileDescriptor(Uri.parse(e.url), "r")
-                state.pfd = pfd
-                Media(lib, pfd!!.fileDescriptor)
+        val media = try {
+            when {
+                e.url.startsWith("content://") -> {
+                    val pfd = context.contentResolver.openFileDescriptor(Uri.parse(e.url), "r")
+                        ?: throw java.io.FileNotFoundException(e.url)
+                    state.pfd = pfd
+                    Media(lib, pfd.fileDescriptor)
+                }
+                e.url.startsWith("/") -> {
+                    if (!java.io.File(e.url).exists()) throw java.io.FileNotFoundException(e.url)
+                    Media(lib, e.url)
+                }
+                else -> Media(lib, Uri.parse(e.url))
             }
-            e.url.startsWith("/") -> Media(lib, e.url)
-            else -> Media(lib, Uri.parse(e.url))
+        } catch (ex: Exception) {
+            // Fichier téléchargé introuvable (clé USB débranchée, fichier supprimé…)
+            buffering = false
+            error = "Le fichier est introuvable. La clé USB ou le disque a peut-être été débranché, ou le fichier supprimé."
+            controls = true
+            return
         }
         // Décodage matériel (MediaCodec) : indispensable pour la 4K HEVC fluide.
         media.setHWDecoderEnabled(true, false)

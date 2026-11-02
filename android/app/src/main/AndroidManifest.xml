@@ -10,6 +10,11 @@
     <!-- Mise à jour intégrée : installation de l'APK téléchargé -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Lanceur perso autorisé à lire les rangées de l'accueil (visibilité du paquet, Android 11+) -->
+    <queries>
+        <package android:name="com.perso.tvhome" />
+    </queries>
+
     <!-- Application Android TV (télécommande), utilisable aussi sur tablette -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />

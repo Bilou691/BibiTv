@@ -75,6 +75,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val categories = mutableStateMapOf<Section, List<Category>>()
     val loadErrors = mutableStateMapOf<Section, String>()
     private val byKey = HashMap<String, MediaItem>()
+    /** Heure du dernier chargement du catalogue (synchronisation automatique). */
+    var catalogLoadedAt by mutableStateOf(0L)
+        private set
 
     // ---------- Écrans superposés ----------
     var detail by mutableStateOf<MediaItem?>(null)
@@ -199,33 +202,58 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // =================== Catalogue ===================
 
+    /** Chargements en cours : un onglet survolé pendant la préparation de l'accueil ne relance pas le téléchargement. */
+    private val loading = HashMap<Section, kotlinx.coroutines.Deferred<Boolean>>()
+
     suspend fun ensureLoaded(section: Section): Boolean {
         if (items.containsKey(section)) return true
         val c = client ?: return false
-        return try {
-            val cats = viewModelScope.async { c.categories(section) }
-            val list = viewModelScope.async { c.items(section) }
-            val catList = cats.await()
-            val raw = list.await()
-            val grouped = withContext(Dispatchers.Default) {
-                // Catégories françaises : leur titre est préféré quand une œuvre existe en plusieurs langues.
-                val french = catList.filter {
-                    Regex("""(^|[^A-Za-z])(FR|VF|VFF|VFQ|FRENCH|FRANCE|FRANÇAIS)([^A-Za-z]|$)""", RegexOption.IGNORE_CASE).containsMatchIn(it.name)
-                }.map { it.id }.toSet()
-                val g = TitleGrouper.group(raw, merge = section != Section.Live) { it.categoryId in french }
-                if (section == Section.Live) ChannelBrands.tag(g)
-                g
+        val job = loading[section]?.takeIf { it.isActive } ?: viewModelScope.async {
+            try {
+                val (catList, grouped) = fetchSection(c, section)
+                if (c != client) return@async false
+                commitSection(section, catList, grouped)
+                true
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: OutOfMemoryError) {
+                loadErrors[section] = "Catalogue trop volumineux pour la mémoire de cet appareil."
+                false
+            } catch (e: Exception) {
+                loadErrors[section] = e.message ?: "Erreur de chargement"
+                false
+            } finally {
+                loading.remove(section)
             }
-            if (c != client) return false
-            grouped.forEach { byKey[it.key] = it }
-            categories[section] = catList
-            items[section] = grouped
-            loadErrors.remove(section)
-            true
-        } catch (e: Exception) {
-            loadErrors[section] = e.message ?: "Erreur de chargement"
-            false
+        }.also { loading[section] = it }
+        return job.await()
+    }
+
+    /** Télécharge et regroupe une section, sans toucher à ce qui est affiché. */
+    private suspend fun fetchSection(c: XtreamClient, section: Section): Pair<List<Category>, List<MediaItem>> {
+        val cats = viewModelScope.async { c.categories(section) }
+        val list = viewModelScope.async { c.items(section) }
+        val catList = cats.await()
+        val raw = list.await()
+        val grouped = withContext(Dispatchers.Default) {
+            // Catégories françaises : leur titre est préféré quand une œuvre existe en plusieurs langues.
+            val french = catList.filter {
+                Regex("""(^|[^A-Za-z])(FR|VF|VFF|VFQ|FRENCH|FRANCE|FRANÇAIS)([^A-Za-z]|$)""", RegexOption.IGNORE_CASE).containsMatchIn(it.name)
+            }.map { it.id }.toSet()
+            val g = TitleGrouper.group(raw, merge = section != Section.Live) { it.categoryId in french }
+            if (section == Section.Live) ChannelBrands.tag(g)
+            g
         }
+        return catList to grouped
+    }
+
+    private fun commitSection(section: Section, catList: List<Category>, grouped: List<MediaItem>) {
+        byKey.values.removeAll { it.kind == section }
+        grouped.forEach { byKey[it.key] = it }
+        categories[section] = catList
+        items[section] = grouped
+        loadErrors.remove(section)
+        catalogLoadedAt = System.currentTimeMillis()
     }
 
     fun loadSection(section: Section) {
@@ -455,7 +483,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val entry = h.copy(positionMs = if (finished) 0 else position, lengthMs = length)
         if (finished) {
             val watchKey = h.episodeId?.let { ProfileStore.episodeKey(it) } ?: h.key
-            ProfileStore.profile.watched.add(watchKey)
+            ProfileStore.markWatched(watchKey)
         }
         ProfileStore.touch(entry)
         publishWatchNext(entry, finished)

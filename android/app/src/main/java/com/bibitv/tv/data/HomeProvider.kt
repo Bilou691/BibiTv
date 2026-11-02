@@ -6,6 +6,7 @@ import android.content.Context
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.util.AtomicFile
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -22,6 +23,8 @@ import java.io.File
  * Colonnes : key, title, subtitle, image_url, link (bibitv://…), progress (0–1000).
  * « top » ajoute : rank, kind (Films / Séries), backdrop_url (image paysage), plot.
  * Seuls les lanceurs de [ALLOWED] peuvent lire (l'historique de visionnage reste privé).
+ * Le nom du paquet ne suffit pas (n'importe quelle app peut le reprendre) : l'empreinte de la
+ * signature du lanceur est mémorisée à son premier accès, puis exigée à chaque lecture.
  */
 class HomeProvider : ContentProvider() {
 
@@ -32,11 +35,11 @@ class HomeProvider : ContentProvider() {
         selectionArgs: Array<out String>?, sortOrder: String?,
     ): Cursor? {
         val ctx = context ?: return null
-        if (callingPackage !in ALLOWED) throw SecurityException("Accès réservé à l'écran d'accueil")
+        if (!isTrustedCaller(ctx, callingPackage)) throw SecurityException("Accès réservé à l'écran d'accueil")
         ProfileStore.ensureInit(ctx)
         val cursor = MatrixCursor(COLUMNS)
         when (uri.lastPathSegment) {
-            PATH_RESUME -> ProfileStore.profile.history
+            PATH_RESUME -> ProfileStore.historySnapshot()
                 .filter { it.kind != Section.Live && (it.hasProgress || it.episodeId != null) }
                 .take(MAX_ROWS)
                 .forEach { h ->
@@ -88,17 +91,66 @@ class HomeProvider : ContentProvider() {
         val forYouUri: Uri = Uri.parse("content://$AUTHORITY/$PATH_FOR_YOU")
         val topUri: Uri = Uri.parse("content://$AUTHORITY/$PATH_TOP")
 
-        private fun file(ctx: Context) = File(ctx.filesDir, "home_suggestions.json")
+        private fun file(ctx: Context) = AtomicFile(File(ctx.filesDir, "home_suggestions.json"))
+
+        private fun write(f: AtomicFile, text: String) {
+            val out = try { f.startWrite() } catch (_: Exception) { return }
+            try {
+                out.write(text.toByteArray(Charsets.UTF_8))
+                f.finishWrite(out)
+            } catch (_: Exception) {
+                f.failWrite(out)
+            }
+        }
+
+        private fun read(f: AtomicFile): String = String(f.readFully(), Charsets.UTF_8)
+
+        // ---------- Lanceur autorisé (empreinte de signature mémorisée au premier accès) ----------
+
+        private fun pins(ctx: Context) = ctx.getSharedPreferences("home_provider", Context.MODE_PRIVATE)
+
+        @Suppress("DEPRECATION")
+        private fun signature(ctx: Context, pkg: String): String? = try {
+            val pm = ctx.packageManager
+            val sigs = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P)
+                pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES).signingInfo?.apkContentsSigners
+            else pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_SIGNATURES).signatures
+            sigs?.map { s -> java.security.MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) } }
+                ?.sorted()?.joinToString(",")
+        } catch (_: Exception) {
+            null
+        }
+
+        @Synchronized
+        private fun isTrustedCaller(ctx: Context, pkg: String?): Boolean {
+            if (pkg == null || pkg !in ALLOWED) return false
+            val actual = signature(ctx, pkg) ?: return false
+            val prefs = pins(ctx)
+            val pinned = prefs.getString(pkg, null)
+            if (pinned == null) {
+                prefs.edit().putString(pkg, actual).apply()
+                return true
+            }
+            return pinned == actual
+        }
+
+        /** Empreinte mémorisée du lanceur autorisé (affichée dans les Réglages), ou null. */
+        fun trustedLauncher(ctx: Context): String? = pins(ctx).all.entries.firstOrNull()?.let { (k, v) -> "$k  ·  ${(v as? String)?.take(12)}…" }
+
+        /** Oublie l'empreinte : à faire si le lanceur perso a été réinstallé avec une autre signature. */
+        fun resetTrustedLauncher(ctx: Context) {
+            pins(ctx).edit().clear().apply()
+        }
 
         /** Enregistre la rangée « Pour toi » (appelé à chaque construction de l'accueil). */
         fun saveSuggestions(ctx: Context, items: List<MediaItem>) {
             val list = items.distinctBy { it.key }.take(MAX_ROWS)
                 .map { Suggestion(it.key, it.title, it.subtitle, it.imageUrl) }
-            runCatching { file(ctx).writeText(json.encodeToString(list)) }
+            write(file(ctx), json.encodeToString(list))
             notifyChanged(ctx, forYouUri)
         }
 
-        private fun topFile(ctx: Context) = File(ctx.filesDir, "home_top.json")
+        private fun topFile(ctx: Context) = AtomicFile(File(ctx.filesDir, "home_top.json"))
 
         /** Enregistre le Top 10 films / séries (alternés) avec images larges et résumés TMDB. */
         fun saveTop(ctx: Context, movies: List<RankedItem>, series: List<RankedItem>) {
@@ -114,16 +166,16 @@ class HomeProvider : ContentProvider() {
                 movies.getOrNull(i)?.let { list += entry(it, "Films") }
                 series.getOrNull(i)?.let { list += entry(it, "Séries") }
             }
-            runCatching { topFile(ctx).writeText(json.encodeToString(list)) }
+            write(topFile(ctx), json.encodeToString(list))
             notifyChanged(ctx, topUri)
         }
 
         private fun readTop(ctx: Context): List<TopEntry> = runCatching {
-            json.decodeFromString<List<TopEntry>>(topFile(ctx).readText())
+            json.decodeFromString<List<TopEntry>>(read(topFile(ctx)))
         }.getOrDefault(emptyList())
 
         private fun readSuggestions(ctx: Context): List<Suggestion> = runCatching {
-            json.decodeFromString<List<Suggestion>>(file(ctx).readText())
+            json.decodeFromString<List<Suggestion>>(read(file(ctx)))
         }.getOrDefault(emptyList())
 
         fun notifyChanged(ctx: Context, uri: Uri) {

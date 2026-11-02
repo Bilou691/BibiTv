@@ -59,9 +59,11 @@ jobs:
           name: BibiTV-androidtv
           path: android/out/BibiTV-androidtv.apk
 
-      # Release versionnée : utilisée par la mise à jour intégrée de l'app
+      # Release versionnée : utilisée par la mise à jour intégrée de l'app.
+      # Publiée uniquement depuis la branche par défaut du dépôt : une autre branche
+      # (essai, correctif en cours…) compile l'APK sans le proposer aux TV.
       - name: Release versionnée
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-v${{ steps.v.outputs.version }}
@@ -74,7 +76,7 @@ jobs:
 
       # Lien fixe pour l'app Downloader sur la TV (toujours la dernière version)
       - name: Lien fixe (Downloader)
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android

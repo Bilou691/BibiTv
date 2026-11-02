@@ -43,6 +43,16 @@ class XtreamClient(baseUrl: String, username: String, password: String) {
 
         private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
+        private fun escape(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
+        /** Remplace les identifiants d'une URL de lecture par des marqueurs (pour l'enregistrer sans le mot de passe). */
+        fun templatize(url: String, username: String, password: String): String =
+            url.replace("/${escape(username.trim())}/${escape(password.trim())}/", "/{u}/{p}/")
+
+        /** Remet les identifiants actuels dans une URL enregistrée avec [templatize]. */
+        fun resolve(template: String, username: String, password: String): String =
+            template.replace("/{u}/{p}/", "/${escape(username.trim())}/${escape(password.trim())}/")
+
         fun normalizeUrl(url: String): String {
             var u = url.trim().trimEnd('/')
             if (!u.startsWith("http://", true) && !u.startsWith("https://", true)) u = "http://$u"
@@ -106,53 +116,104 @@ class XtreamClient(baseUrl: String, username: String, password: String) {
         }
     }
 
-    suspend fun items(section: Section): List<MediaItem> {
+    /**
+     * Catalogue complet d'une section, lu en flux : la réponse (parfois plus de 100 000 titres)
+     * n'est jamais gardée entière en mémoire, ce qui évite les plantages sur les box modestes.
+     */
+    suspend fun items(section: Section): List<MediaItem> = withContext(Dispatchers.IO) {
         val action = when (section) {
             Section.Live -> "get_live_streams"
             Section.Movies -> "get_vod_streams"
             Section.Series -> "get_series"
         }
-        val root = get(action)
-        return withContext(Dispatchers.Default) {
-            array(root).mapNotNull { e ->
-                val item = when (section) {
-                    Section.Live -> MediaItem(
-                        kind = Section.Live,
-                        id = str(e, "stream_id") ?: "",
-                        title = clean(str(e, "name")) ?: "",
-                        imageUrl = img(str(e, "stream_icon")),
-                        categoryId = str(e, "category_id") ?: "",
-                        added = str(e, "added")?.toLongOrNull() ?: 0,
-                    )
-                    Section.Movies -> MediaItem(
-                        kind = Section.Movies,
-                        id = str(e, "stream_id") ?: "",
-                        title = clean(str(e, "name")) ?: "",
-                        imageUrl = img(str(e, "stream_icon")),
-                        categoryId = str(e, "category_id") ?: "",
-                        rating = str(e, "rating"),
-                        year = yearOf(str(e, "year") ?: str(e, "release_date")),
-                        extension = str(e, "container_extension"),
-                        added = str(e, "added")?.toLongOrNull() ?: 0,
-                        tmdbId = str(e, "tmdb") ?: str(e, "tmdb_id"),
-                    )
-                    Section.Series -> MediaItem(
-                        kind = Section.Series,
-                        id = str(e, "series_id") ?: "",
-                        title = clean(str(e, "name")) ?: "",
-                        imageUrl = img(str(e, "cover")),
-                        categoryId = str(e, "category_id") ?: "",
-                        rating = str(e, "rating"),
-                        year = yearOf(str(e, "year") ?: str(e, "releaseDate") ?: str(e, "release_date")),
-                        plot = str(e, "plot"),
-                        genre = str(e, "genre"),
-                        added = str(e, "last_modified")?.toLongOrNull() ?: 0,
-                        tmdbId = str(e, "tmdb") ?: str(e, "tmdb_id"),
-                    )
+        val url = "$baseUrl/player_api.php?username=${esc(username)}&password=${esc(password)}&action=$action"
+        val out = ArrayList<MediaItem>()
+        http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+            val body = resp.body ?: throw IOException("Réponse vide")
+            val reader = android.util.JsonReader(body.charStream())
+            reader.isLenient = true
+            fun handle(o: Map<String, String>) = toItem(section, o)?.let { out += it }
+            when (reader.peek()) {
+                android.util.JsonToken.BEGIN_ARRAY -> {
+                    reader.beginArray()
+                    while (reader.hasNext()) {
+                        if (reader.peek() == android.util.JsonToken.BEGIN_OBJECT) handle(readFlat(reader)) else reader.skipValue()
+                    }
+                    reader.endArray()
                 }
-                item.takeIf { it.id.isNotEmpty() }
+                // Certains panels renvoient un objet { "1": {...}, "2": {...} } au lieu d'un tableau.
+                android.util.JsonToken.BEGIN_OBJECT -> {
+                    reader.beginObject()
+                    while (reader.hasNext()) {
+                        reader.nextName()
+                        if (reader.peek() == android.util.JsonToken.BEGIN_OBJECT) handle(readFlat(reader)) else reader.skipValue()
+                    }
+                    reader.endObject()
+                }
+                else -> reader.skipValue()
             }
         }
+        out.trimToSize()
+        out
+    }
+
+    /** Lit un objet JSON en ne gardant que ses valeurs simples (texte, nombre, booléen). */
+    private fun readFlat(reader: android.util.JsonReader): Map<String, String> {
+        val map = HashMap<String, String>(32)
+        reader.beginObject()
+        while (reader.hasNext()) {
+            val name = reader.nextName()
+            when (reader.peek()) {
+                android.util.JsonToken.STRING, android.util.JsonToken.NUMBER -> {
+                    val v = reader.nextString().trim()
+                    if (v.isNotEmpty()) map[name] = v
+                }
+                android.util.JsonToken.BOOLEAN -> map[name] = if (reader.nextBoolean()) "1" else "0"
+                else -> reader.skipValue()
+            }
+        }
+        reader.endObject()
+        return map
+    }
+
+    private fun toItem(section: Section, e: Map<String, String>): MediaItem? {
+        val item = when (section) {
+            Section.Live -> MediaItem(
+                kind = Section.Live,
+                id = e["stream_id"] ?: "",
+                title = clean(e["name"]) ?: "",
+                imageUrl = img(e["stream_icon"]),
+                categoryId = e["category_id"] ?: "",
+                added = e["added"]?.toLongOrNull() ?: 0,
+            )
+            Section.Movies -> MediaItem(
+                kind = Section.Movies,
+                id = e["stream_id"] ?: "",
+                title = clean(e["name"]) ?: "",
+                imageUrl = img(e["stream_icon"]),
+                categoryId = e["category_id"] ?: "",
+                rating = e["rating"],
+                year = yearOf(e["year"] ?: e["release_date"]),
+                extension = e["container_extension"],
+                added = e["added"]?.toLongOrNull() ?: 0,
+                tmdbId = e["tmdb"] ?: e["tmdb_id"],
+            )
+            Section.Series -> MediaItem(
+                kind = Section.Series,
+                id = e["series_id"] ?: "",
+                title = clean(e["name"]) ?: "",
+                imageUrl = img(e["cover"]),
+                categoryId = e["category_id"] ?: "",
+                rating = e["rating"],
+                year = yearOf(e["year"] ?: e["releaseDate"] ?: e["release_date"]),
+                plot = e["plot"],
+                genre = e["genre"],
+                added = e["last_modified"]?.toLongOrNull() ?: 0,
+                tmdbId = e["tmdb"] ?: e["tmdb_id"],
+            )
+        }
+        return item.takeIf { it.id.isNotEmpty() }
     }
 
     suspend fun movieInfo(vodId: String): MovieInfo {

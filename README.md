@@ -22,7 +22,20 @@ Lecteur IPTV **Xtream Codes** pour Windows, avec une interface épurée inspiré
 - **Mise à jour intégrée** : au démarrage (ou en cliquant sur le numéro de version), BibiTV vérifie la dernière release GitHub, la télécharge, vérifie son empreinte SHA-256 et redémarre à jour
 - Mot de passe **chiffré avec DPAPI** (lisible uniquement par votre compte Windows), dans `%APPDATA%\BibiTv\settings.json`
 
-## Installation
+## Android TV
+
+L'application Android TV (dossier `android/`) reprend les mêmes fonctions, pilotées à la télécommande.
+
+- **Installation sur la TV** : dans l'app *Downloader*, saisir
+  `https://github.com/Bilou691/BibiTv/releases/download/android/bibitv.apk`
+- **Mises à jour** : chaque push sur la **branche par défaut** du dépôt publie la release `android-v<version>`
+  (version lue dans `android/app/build.gradle.kts`) ; les TV la proposent au démarrage.
+  Les autres branches compilent l'APK (artefact du workflow) sans le diffuser.
+- **Pour diffuser une mise à jour, augmentez `versionCode` et `versionName`** dans `android/app/build.gradle.kts`.
+- Secrets GitHub utilisés : `ANDROID_KEYSTORE_B64` et `ANDROID_KEYSTORE_PASSWORD` (signature, indispensables
+  pour que les mises à jour s'installent par-dessus), `TMDB_KEY` (Top 10).
+
+## Installation (Windows)
 
 1. Ouvrez l'onglet **Actions** du dépôt, puis le dernier run **Build Windows** réussi
 2. Téléchargez l'artefact `BibiTv-win-x64` et dézippez-le

@@ -1,6 +1,7 @@
 package com.bibitv.tv.data
 
 import android.content.Context
+import android.util.AtomicFile
 import androidx.compose.runtime.mutableIntStateOf
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -47,11 +48,17 @@ data class UserProfile(
     var hideWatched: Boolean = false,
 )
 
-/** Profil de visionnage (historique, « déjà vu », goûts, Ma liste), stocké dans profile.json. */
+/**
+ * Profil de visionnage (historique, « déjà vu », goûts, Ma liste), stocké dans profile.json.
+ *
+ * Écriture atomique (fichier temporaire + copie de secours) : une coupure de courant pendant
+ * l'enregistrement ne peut plus effacer le profil. Toutes les modifications passent par ce
+ * verrou, car l'écran d'accueil de la TV lit l'historique depuis un autre fil d'exécution.
+ */
 object ProfileStore {
     private const val MAX_HISTORY = 60
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    private lateinit var file: File
+    private lateinit var file: AtomicFile
     private var appContext: Context? = null
 
     var profile = UserProfile()
@@ -60,38 +67,61 @@ object ProfileStore {
     /** Incrémenté à chaque changement : lu par l'interface pour se rafraîchir. */
     val revision = mutableIntStateOf(0)
 
+    @Synchronized
     fun init(context: Context) {
+        if (::file.isInitialized) return
         appContext = context.applicationContext
-        file = File(context.filesDir, "profile.json")
+        file = AtomicFile(File(context.filesDir, "profile.json"))
         profile = try {
-            if (file.exists()) json.decodeFromString(file.readText()) else UserProfile()
+            json.decodeFromString(String(file.readFully(), Charsets.UTF_8))
+        } catch (e: java.io.FileNotFoundException) {
+            UserProfile()
         } catch (e: Exception) {
+            // Fichier illisible : on le garde de côté plutôt que de l'écraser au prochain enregistrement.
+            runCatching { file.baseFile.copyTo(File(context.filesDir, "profile.corrompu.json"), overwrite = true) }
             UserProfile()
         }
     }
 
     /** Le fournisseur de l'accueil peut être interrogé avant Application.onCreate. */
-    @Synchronized
-    fun ensureInit(context: Context) {
-        if (!::file.isInitialized) init(context)
-    }
+    fun ensureInit(context: Context) = init(context)
 
     @Synchronized
     fun save() {
-        revision.intValue++
-        try {
-            file.writeText(json.encodeToString(profile))
-        } catch (_: Exception) {
+        val out = try { file.startWrite() } catch (_: Exception) { null }
+        if (out != null) {
+            try {
+                out.write(json.encodeToString(profile).toByteArray(Charsets.UTF_8))
+                file.finishWrite(out)
+            } catch (_: Exception) {
+                file.failWrite(out)
+            }
         }
-        appContext?.let { HomeProvider.notifyChanged(it, HomeProvider.resumeUri) }
+        val ctx = appContext
+        val main = android.os.Looper.getMainLooper()
+        if (android.os.Looper.myLooper() == main) revision.intValue++
+        else android.os.Handler(main).post { revision.intValue++ }
+        ctx?.let { HomeProvider.notifyChanged(it, HomeProvider.resumeUri) }
     }
+
+    /** Copie de l'historique, sûre depuis n'importe quel fil d'exécution. */
+    @Synchronized
+    fun historySnapshot(): List<HistoryEntry> = profile.history.toList()
 
     fun episodeKey(episodeId: String) = "Ep:$episodeId"
 
     fun isWatched(key: String) = key in profile.watched
+
+    @Synchronized
     fun setWatched(key: String, watched: Boolean) {
         if (watched) profile.watched.add(key) else profile.watched.remove(key)
         save()
+    }
+
+    /** Marque comme vu sans enregistrer (l'appelant enregistre juste après). */
+    @Synchronized
+    fun markWatched(key: String) {
+        profile.watched.add(key)
     }
 
     /** 1 = j'aime, -1 = je n'aime pas, 0 = sans avis. */
@@ -101,6 +131,7 @@ object ProfileStore {
         else -> 0
     }
 
+    @Synchronized
     fun setRating(key: String, rating: Int) {
         profile.likes.remove(key)
         profile.dislikes.remove(key)
@@ -109,6 +140,8 @@ object ProfileStore {
     }
 
     fun isFavorite(item: MediaItem) = item.key in profile.favorites || item.variants.any { "${it.kind}:${it.id}" in profile.favorites }
+
+    @Synchronized
     fun toggleFavorite(item: MediaItem) {
         if (isFavorite(item)) {
             profile.favorites.remove(item.key)
@@ -117,6 +150,7 @@ object ProfileStore {
         save()
     }
 
+    @Synchronized
     fun setHideWatched(hide: Boolean) {
         profile.hideWatched = hide
         save()
@@ -132,6 +166,7 @@ object ProfileStore {
         save()
     }
 
+    @Synchronized
     fun removeHistory(key: String) {
         profile.history.removeAll { it.key == key }
         save()

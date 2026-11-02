@@ -342,6 +342,21 @@ fun SettingsScreen(vm: AppViewModel) {
                 PillButton("Rechercher une mise à jour", { scope.launch { vm.checkUpdate(silent = false) } })
             }
 
+            val ctx = LocalContext.current
+            var launcher by remember { mutableStateOf(com.bibitv.tv.data.HomeProvider.trustedLauncher(ctx)) }
+            launcher?.let { l ->
+                Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Écran d'accueil perso autorisé", color = C.Text, fontSize = 16.sp)
+                        Text("$l — à réinitialiser si le lanceur a été réinstallé et n'affiche plus les rangées.",
+                            color = C.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp, end = 12.dp))
+                    }
+                    PillButton("Réinitialiser", {
+                        com.bibitv.tv.data.HomeProvider.resetTrustedLauncher(ctx); launcher = null
+                    })
+                }
+            }
+
             vm.lastCrash?.let { crash ->
                 Text("DERNIER PLANTAGE", color = C.Red, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 26.dp, bottom = 6.dp))
                 Text(crash.lines().take(9).joinToString("\n"), color = C.Text2, fontSize = 11.sp, lineHeight = 15.sp)

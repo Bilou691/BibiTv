@@ -37,18 +37,22 @@ object UpdateManager {
         XtreamClient.http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) return@withContext null
             val releases = json.parseToJsonElement(resp.body!!.string()).jsonArray
+            // Les releases sont triées par date de création : on retient la plus haute version, pas la plus récente.
+            var best: UpdateInfo? = null
             for (r in releases) {
                 val o = r.jsonObject
                 val tag = (o["tag_name"] as? JsonPrimitive)?.content ?: continue
                 if (!tag.startsWith("android-v")) continue
                 if ((o["draft"] as? JsonPrimitive)?.content == "true") continue
+                if ((o["prerelease"] as? JsonPrimitive)?.content == "true") continue
                 val version = tag.removePrefix("android-v")
-                if (compare(version, currentVersion) <= 0) return@withContext null
-                for (a in o["assets"]?.jsonArray ?: return@withContext null) {
+                if (compare(version, currentVersion) <= 0) continue
+                if (best != null && compare(version, best.version) <= 0) continue
+                for (a in o["assets"]?.jsonArray ?: continue) {
                     val asset = a.jsonObject
                     if ((asset["name"] as? JsonPrimitive)?.content != ASSET) continue
                     val digest = (asset["digest"] as? JsonPrimitive)?.content
-                    return@withContext UpdateInfo(
+                    best = UpdateInfo(
                         version = version,
                         tag = tag,
                         url = (asset["browser_download_url"] as JsonPrimitive).content,
@@ -56,10 +60,10 @@ object UpdateManager {
                         size = (asset["size"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 0,
                         notes = (o["body"] as? JsonPrimitive)?.content,
                     )
+                    break
                 }
-                return@withContext null
             }
-            null
+            best
         }
     }
 
