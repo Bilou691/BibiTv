@@ -6,6 +6,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -166,6 +171,7 @@ fun DetailScreen(item: MediaItem, vm: AppViewModel) {
 
 // =================== Personnaliser ===================
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PersonalizeScreen(vm: AppViewModel) {
     BackHandler { vm.showPersonalize = false }
@@ -176,10 +182,11 @@ fun PersonalizeScreen(vm: AppViewModel) {
     val p = ProfileStore.profile
     val n = p.likes.size + p.dislikes.size
 
-    Column(Modifier.fillMaxSize().background(Color(0xFA0A0A0C)).padding(horizontal = 56.dp, vertical = 36.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Vos goûts", color = C.Text, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+    val compact = LocalDims.current.compact
+    Column(Modifier.fillMaxSize().background(Color(0xFA0A0A0C)).padding(horizontal = if (compact) 16.dp else 56.dp, vertical = if (compact) 16.dp else 36.dp)) {
+        FlowRow(verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(if (compact) Modifier.fillMaxWidth() else Modifier.weight(1f)) {
+                Text("Vos goûts", color = C.Text, fontSize = if (compact) 28.sp else 34.sp, fontWeight = FontWeight.Bold)
                 @Suppress("UNUSED_VARIABLE") val r = rev
                 Text(
                     if (n == 0) "Notez quelques titres que vous avez vus : plus vous en notez, plus les suggestions « Pour toi » sont justes."
@@ -188,24 +195,22 @@ fun PersonalizeScreen(vm: AppViewModel) {
                 )
             }
             PillButton("Films", { kind = Section.Movies }, selected = kind == Section.Movies)
-            Spacer(Modifier.width(8.dp))
             PillButton("Séries", { kind = Section.Series }, selected = kind == Section.Series)
-            Spacer(Modifier.width(24.dp))
             PillButton("Terminé", { vm.showPersonalize = false }, primary = true)
         }
         Text("👍 j'aime   ·   👎 je n'aime pas   ·   ✓ déjà vu", color = C.Text2, fontSize = 13.sp, modifier = Modifier.padding(top = 16.dp, bottom = 10.dp))
-        LazyVerticalGrid(GridCells.Adaptive(170.dp), contentPadding = PaddingValues(vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        LazyVerticalGrid(GridCells.Adaptive(if (compact) 150.dp else 170.dp), contentPadding = PaddingValues(vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             items(candidates, key = { it.key }) { m ->
                 @Suppress("UNUSED_VARIABLE") val r = rev
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Poster(m.imageUrl, m.initial, Modifier.fillMaxWidth().aspectRatio(2f / 3f), cornerRadius = 12.dp)
                     Text(m.title, color = Color(0xFFE5E5EA), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 8.dp))
                     val rating = ProfileStore.ratingOf(m.key)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        PillButton("👍", { vm.rate(m, 1) }, activeColor = if (rating > 0) C.Green else null)
-                        PillButton("👎", { vm.rate(m, -1) }, activeColor = if (rating < 0) C.Red else null)
-                        PillButton("✓", { vm.toggleWatched(m) }, activeColor = if (ProfileStore.isWatched(m.key)) C.Blue else null)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        PillButton("👍", { vm.rate(m, 1) }, Modifier.weight(1f), activeColor = if (rating > 0) C.Green else null, compact = true, fill = true)
+                        PillButton("👎", { vm.rate(m, -1) }, Modifier.weight(1f), activeColor = if (rating < 0) C.Red else null, compact = true, fill = true)
+                        PillButton("✓", { vm.toggleWatched(m) }, Modifier.weight(1f), activeColor = if (ProfileStore.isWatched(m.key)) C.Blue else null, compact = true, fill = true)
                     }
                 }
             }
@@ -215,6 +220,7 @@ fun PersonalizeScreen(vm: AppViewModel) {
 
 // =================== Téléchargements ===================
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DownloadsScreen(vm: AppViewModel) {
     BackHandler { vm.showDownloads = false }
@@ -229,10 +235,11 @@ fun DownloadsScreen(vm: AppViewModel) {
         Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).resolveActivity(context.packageManager) != null
     }
 
-    Row(Modifier.fillMaxSize().background(Color(0xFA0A0A0C)).padding(horizontal = 56.dp, vertical = 36.dp)) {
-        // Emplacement (clé USB conseillée pour ne pas remplir la TV)
-        Column(Modifier.width(440.dp)) {
-            Text("Téléchargements", color = C.Text, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+    val compact = LocalDims.current.compact
+    val tv = com.bibitv.tv.data.Device.isTv
+    val header: @Composable () -> Unit = {
+        Column(if (compact) Modifier.fillMaxWidth() else Modifier.width(440.dp)) {
+            Text("Téléchargements", color = C.Text, fontSize = if (compact) 28.sp else 34.sp, fontWeight = FontWeight.Bold)
             Text("Emplacement", color = C.Text2, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp, bottom = 10.dp))
             options.forEach { o ->
                 val selected = o.id == current.id
@@ -241,7 +248,7 @@ fun DownloadsScreen(vm: AppViewModel) {
                     Row(Modifier.fillMaxWidth().background(if (selected) C.Surface2 else C.Surface).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(if (selected) "◉" else "○", color = if (selected) C.Blue else C.Text2, fontSize = 18.sp)
                         Column(Modifier.padding(start = 14.dp)) {
-                            Text((if (o.removable) "🔌  " else "📺  ") + o.label, color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Text((if (o.removable) "🔌  " else if (tv) "📺  " else "📱  ") + o.label, color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                             Text(if (o.freeBytes >= 0) "${DownloadManager.size(o.freeBytes)} disponibles" else "Dossier choisi", color = C.Text2, fontSize = 13.sp)
                         }
                     }
@@ -252,23 +259,44 @@ fun DownloadsScreen(vm: AppViewModel) {
                 PillButton("Choisir un dossier…", { runCatching { treePicker.launch(null) } })
             }
             Text(
-                "Branchez une clé USB ou un disque dur sur la TV : il apparaît ici automatiquement (actualiser). " +
-                    "Les fichiers sont rangés dans Android/data/com.bibitv.tv/files/Movies sur le support choisi.",
+                if (tv) "Branchez une clé USB ou un disque dur sur la TV : il apparaît ici automatiquement (actualiser). " +
+                    "Les fichiers sont rangés dans Android/data/com.bibitv.tv/files/Movies sur le support choisi."
+                else "Les fichiers téléchargés se regardent sans connexion, depuis cet écran. " +
+                    "Ils sont rangés dans Android/data/com.bibitv.tv/files/Movies.",
                 color = C.Text3, fontSize = 12.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 16.dp),
             )
             Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PillButton("Actualiser", { refresh++ })
                 PillButton("Effacer les terminés", { DownloadManager.clearFinished() })
                 PillButton("Fermer", { vm.showDownloads = false }, primary = true)
             }
         }
+    }
+    val list = DownloadManager.items
+    val empty: @Composable () -> Unit = {
+        Text("Aucun téléchargement.\nUtilisez « Télécharger » sur la fiche d'un film ou d'un épisode.", color = C.Text2, fontSize = 16.sp,
+            modifier = Modifier.padding(top = if (compact) 24.dp else 80.dp))
+    }
+
+    if (compact) {
+        LazyColumn(
+            Modifier.fillMaxSize().background(Color(0xFA0A0A0C)),
+            contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item { header() }
+            if (list.isEmpty()) item { empty() } else items(list) { d -> DownloadRow(d, vm) }
+        }
+        return
+    }
+
+    Row(Modifier.fillMaxSize().background(Color(0xFA0A0A0C)).padding(horizontal = 56.dp, vertical = 36.dp)) {
+        // Emplacement (clé USB conseillée pour ne pas remplir la TV)
+        header()
         Spacer(Modifier.width(40.dp))
         // File d'attente
-        val list = DownloadManager.items
         if (list.isEmpty()) {
-            Text("Aucun téléchargement.\nUtilisez « Télécharger » sur la fiche d'un film ou d'un épisode.", color = C.Text2, fontSize = 16.sp,
-                modifier = Modifier.padding(top = 80.dp))
+            empty()
         } else {
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(top = 60.dp)) {
                 items(list) { d -> DownloadRow(d, vm) }
@@ -296,6 +324,7 @@ private fun DownloadRow(d: DownloadItem, vm: AppViewModel) {
 
 // =================== Réglages ===================
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(vm: AppViewModel) {
     BackHandler { vm.showSettings = false }
@@ -304,7 +333,12 @@ fun SettingsScreen(vm: AppViewModel) {
     val first = remember { FocusRequester() }
 
     Box(Modifier.fillMaxSize().background(Color(0xB3000000)), contentAlignment = Alignment.Center) {
-        Column(Modifier.width(620.dp).clip(RoundedCornerShape(22.dp)).background(C.Surface).padding(32.dp)) {
+        val compact = LocalDims.current.compact
+        Column(
+            Modifier.padding(vertical = 24.dp, horizontal = if (compact) 12.dp else 0.dp).widthIn(max = 620.dp).fillMaxWidth()
+                .clip(RoundedCornerShape(22.dp)).background(C.Surface)
+                .verticalScroll(rememberScrollState()).padding(if (compact) 20.dp else 32.dp),
+        ) {
             Text("Réglages", color = C.Text, fontSize = 30.sp, fontWeight = FontWeight.Bold)
             vm.accountExpiry?.let {
                 val d = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.FRANCE).format(java.util.Date(it))
@@ -313,7 +347,7 @@ fun SettingsScreen(vm: AppViewModel) {
             Text("Serveur : ${SettingsStore.serverUrl}", color = C.Text3, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
 
             Text("VIDÉO", color = C.Text2, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 26.dp, bottom = 10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (com.bibitv.tv.data.Device.isTv) Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Adapter la fréquence de l'écran", color = C.Text, fontSize = 16.sp)
                     Text("La TV passe en 24 Hz pour un film en 24 images/s : plus aucune saccade. Recommandé en 4K.",
@@ -322,10 +356,11 @@ fun SettingsScreen(vm: AppViewModel) {
                 PillButton(if (matchFps) "Activé" else "Désactivé", {
                     matchFps = !matchFps; SettingsStore.matchFrameRate = matchFps
                 }, Modifier.focusRequester(first), activeColor = if (matchFps) C.Green else null)
+                Unit
             }
 
             var direct by remember { mutableStateOf(SettingsStore.directRendering) }
-            Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = if (com.bibitv.tv.data.Device.isTv) 14.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Rendu vidéo direct (HDR)", color = C.Text, fontSize = 16.sp)
                     Text("Noirs profonds et HDR conservés. À désactiver uniquement si une vidéo reste noire.",
@@ -334,6 +369,19 @@ fun SettingsScreen(vm: AppViewModel) {
                 PillButton(if (direct) "Activé" else "Désactivé", {
                     direct = !direct; SettingsStore.directRendering = direct
                 }, activeColor = if (direct) C.Green else null)
+            }
+
+            Text("PLAYLISTS", color = C.Text2, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 26.dp, bottom = 10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Synchroniser les playlists", color = C.Text, fontSize = 16.sp)
+                    Text(
+                        (if (vm.syncing) "Synchronisation en cours…" else "Dernière synchronisation : ${vm.catalogAge()}") +
+                            ". Automatique au retour sur l'app après 12 h.",
+                        color = C.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp, end = 12.dp),
+                    )
+                }
+                PillButton(if (vm.syncing) "En cours…" else "Synchroniser", { if (!vm.syncing) { vm.showSettings = false; vm.syncPlaylists() } })
             }
 
             Text("APPLICATION", color = C.Text2, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 26.dp, bottom = 10.dp))
@@ -363,10 +411,9 @@ fun SettingsScreen(vm: AppViewModel) {
                 PillButton("Effacer", { vm.lastCrash = null }, Modifier.padding(top = 8.dp))
             }
 
-            Row(Modifier.padding(top = 30.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FlowRow(Modifier.padding(top = 30.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PillButton("Personnaliser mes goûts", { vm.showSettings = false; vm.showPersonalize = true })
                 PillButton("Se déconnecter", { vm.logout() })
-                Spacer(Modifier.weight(1f))
                 PillButton("Fermer", { vm.showSettings = false }, primary = true)
             }
         }

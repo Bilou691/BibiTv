@@ -15,7 +15,7 @@
         <package android:name="com.perso.tvhome" />
     </queries>
 
-    <!-- Application Android TV (télécommande), utilisable aussi sur tablette -->
+    <!-- Un seul APK : Android TV (télécommande) et smartphone / tablette (tactile) -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
@@ -35,7 +35,9 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|smallestScreenSize|density"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="landscape">
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true">
+            <!-- Orientation : paysage sur TV, libre sur smartphone / tablette (réglée au lancement) -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

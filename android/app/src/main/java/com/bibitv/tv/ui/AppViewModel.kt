@@ -79,6 +79,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var catalogLoadedAt by mutableStateOf(0L)
         private set
 
+    // ---------- Mobile ----------
+    /** Lecture en petite fenêtre (smartphone / tablette) : contrôles masqués. */
+    var inPip by mutableStateOf(false)
+    /** Incrémenté quand l'app passe en arrière-plan : le lecteur se met en pause. */
+    var pauseSignal by mutableStateOf(0)
+        private set
+    /** Onglet « Recherche » de la barre du bas (smartphone / tablette). */
+    var mobileSearch by mutableStateOf(false)
+    /** Demande l'autorisation d'afficher la notification de téléchargement (Android 13+). */
+    var requestNotificationPermission: (() -> Unit)? = null
+
+    fun onBackground() {
+        if (player != null) pauseSignal++
+    }
+
     // ---------- Écrans superposés ----------
     var detail by mutableStateOf<MediaItem?>(null)
     var player by mutableStateOf<PlayerRequest?>(null)
@@ -309,10 +324,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // =================== Accueil ===================
 
-    fun buildHome(force: Boolean = false) {
+    fun buildHome(force: Boolean = false, silent: Boolean = false) {
         if (home != null && !force) return
         viewModelScope.launch {
-            busy = "Préparation de l'accueil…"
+            if (!silent) busy = "Préparation de l'accueil…"
             val errors = mutableListOf<String>()
             for (s in listOf(Section.Movies, Section.Series, Section.Live)) {
                 if (!ensureLoaded(s)) loadErrors[s]?.let { errors += it }
@@ -343,6 +358,76 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 } catch (_: Exception) {
                 }
             }
+        }
+    }
+
+    // =================== Synchronisation des playlists ===================
+
+    var syncing by mutableStateOf(false)
+        private set
+
+    /** Au-delà de ce délai, le catalogue est rechargé discrètement quand on revient sur l'app. */
+    private val autoSyncAfterMs = 12 * 3600_000L
+
+    /**
+     * Recharge chaînes, films et séries depuis le serveur, puis reconstruit l'accueil.
+     * Le catalogue affiché reste utilisable pendant le chargement ; il est remplacé à la fin
+     * (positions dans les listes et fiche ouverte conservées).
+     */
+    fun syncPlaylists(silent: Boolean = false) {
+        val c = client ?: return
+        if (syncing) return
+        syncing = true
+        viewModelScope.launch {
+            if (!silent) busy = "Synchronisation des playlists…"
+            val errors = mutableListOf<String>()
+            try {
+                for (s in listOf(Section.Movies, Section.Series, Section.Live)) {
+                    try {
+                        val (cats, grouped) = fetchSection(c, s)
+                        if (c != client) return@launch
+                        commitSection(s, cats, grouped)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: OutOfMemoryError) {
+                        errors += "${sectionName(s)} : mémoire insuffisante"
+                    } catch (e: Exception) {
+                        errors += "${sectionName(s)} : ${e.message ?: "erreur"}"
+                    }
+                }
+                epgCache.clear()
+            } finally {
+                busy = null
+                syncing = false
+            }
+            buildHome(force = true, silent = true)
+            if (errors.isNotEmpty()) updateMessage = "Synchronisation incomplète — ${errors.joinToString(" · ")}"
+            else if (!silent) updateMessage = "Playlists synchronisées : ${count(Section.Movies)} films · ${count(Section.Series)} séries · ${count(Section.Live)} chaînes"
+        }
+    }
+
+    private fun count(s: Section) = items[s]?.size ?: 0
+    private fun sectionName(s: Section) = when (s) {
+        Section.Live -> "Chaînes"
+        Section.Movies -> "Films"
+        Section.Series -> "Séries"
+    }
+
+    /** Retour sur l'app (TV rallumée, retour depuis une autre app) : synchro discrète si le catalogue date. */
+    fun onAppResumed() {
+        if (client == null || home == null || player != null || syncing) return
+        if (catalogLoadedAt > 0 && System.currentTimeMillis() - catalogLoadedAt > autoSyncAfterMs) syncPlaylists(silent = true)
+    }
+
+    /** « il y a 3 h » : ancienneté du catalogue, affichée dans les Réglages. */
+    fun catalogAge(): String {
+        if (catalogLoadedAt <= 0) return "jamais"
+        val min = (System.currentTimeMillis() - catalogLoadedAt) / 60_000
+        return when {
+            min < 1 -> "à l'instant"
+            min < 60 -> "il y a $min min"
+            min < 48 * 60 -> "il y a ${min / 60} h"
+            else -> "il y a ${min / 1440} jours"
         }
     }
 
@@ -569,6 +654,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val v = variant ?: return
         val ext = v.extension ?: movieInfo?.extension ?: "mp4"
         val name = DownloadManager.safeName(item.title + (item.year?.let { " ($it)" } ?: "") + (if (v.tag.isNotEmpty()) " ${v.tag}" else ""))
+        requestNotificationPermission?.invoke()
         DownloadManager.enqueue(name, c.movieUrl(v.id, ext), "Films/$name.$ext")
         updateMessage = "Ajouté aux téléchargements : $name"
     }
@@ -583,11 +669,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
         val ext = ep.extension.ifBlank { "mp4" }
         val seasonDir = "Saison " + "%02d".format(ep.season)
+        if (notify) requestNotificationPermission?.invoke()
         DownloadManager.enqueue(name, c.episodeUrl(ep.id, ext), "Séries/$series/$seasonDir/$name.$ext")
         if (notify) updateMessage = "Ajouté aux téléchargements : $name"
     }
 
     fun downloadSeason(eps: List<Episode>) {
+        requestNotificationPermission?.invoke()
         eps.forEach { downloadEpisode(it, notify = false) }
         updateMessage = "${eps.size} épisodes ajoutés aux téléchargements"
     }

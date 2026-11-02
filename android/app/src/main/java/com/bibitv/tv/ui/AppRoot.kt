@@ -21,6 +21,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -57,6 +66,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bibitv.tv.R
+import com.bibitv.tv.data.Device
 import com.bibitv.tv.data.SettingsStore
 import com.bibitv.tv.data.UpdateManager
 import com.bibitv.tv.player.PlayerScreen
@@ -66,12 +76,23 @@ import kotlinx.coroutines.launch
 /** Racine de l'application : jingle, connexion, navigation et écrans superposés. */
 @Composable
 fun AppRoot(vm: AppViewModel) {
-    // Interface « 10-foot » : largeur logique fixée à 1280 dp quel que soit l'écran (1080p ou 4K),
-    // pour des tailles identiques sur toutes les TV.
+    val tv = Device.isTv
+    // TV : interface « 10-foot », largeur logique fixée à 1280 dp quel que soit l'écran (1080p ou 4K),
+    // pour des tailles identiques sur toutes les TV. Smartphone / tablette : densité normale de l'appareil.
     val metrics = androidx.compose.ui.platform.LocalContext.current.resources.displayMetrics
     val widthPx = maxOf(metrics.widthPixels, metrics.heightPixels)
-    val tvDensity = androidx.compose.ui.unit.Density(density = widthPx / 1280f, fontScale = 1f)
-    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides tvDensity) {
+    val density = if (tv) androidx.compose.ui.unit.Density(density = widthPx / 1280f, fontScale = 1f)
+    else androidx.compose.ui.platform.LocalDensity.current
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val dims = when {
+        tv -> TvDims
+        config.screenWidthDp >= 600 -> TabletDims
+        else -> PhoneDims
+    }
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalDensity provides density,
+        LocalDims provides dims,
+    ) {
     MaterialTheme(colorScheme = darkColorScheme(background = C.Bg, surface = C.Surface, primary = Color.White)) {
         Box(Modifier.fillMaxSize().background(C.Bg)) {
             LaunchedEffect(Unit) { vm.startup() }
@@ -79,17 +100,24 @@ fun AppRoot(vm: AppViewModel) {
             // Un seul écran à la fois : à la télécommande, le focus ne peut pas « fuir » vers un écran caché.
             val detail = vm.detail
             val req = vm.player
-            when {
-                req != null -> PlayerScreen(req, vm, onClose = { vm.player = null })
-                vm.updatePrompt -> UpdatePromptScreen(vm)
-                // Chargement initial (mise à jour, connexion, playlist) : logo + citations de films
-                vm.busy != null && vm.home == null -> LoadingScreen(vm.busy!!)
-                vm.client == null -> LoginScreen(vm)
-                vm.showSettings -> SettingsScreen(vm)
-                vm.showDownloads -> DownloadsScreen(vm)
-                vm.showPersonalize -> PersonalizeScreen(vm)
-                detail != null -> DetailScreen(detail, vm)
-                else -> MainScreen(vm)
+            // Smartphone / tablette : le contenu évite la barre d'état, l'encoche et la barre de navigation
+            // (le lecteur, lui, occupe tout l'écran).
+            val safe = if (tv || req != null) Modifier.fillMaxSize()
+            else Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
+            Box(safe) {
+                when {
+                    req != null -> PlayerScreen(req, vm, onClose = { vm.player = null })
+                    vm.updatePrompt -> UpdatePromptScreen(vm)
+                    // Chargement initial (mise à jour, connexion, playlist) : logo + citations de films
+                    vm.busy != null && vm.home == null -> LoadingScreen(vm.busy!!)
+                    vm.client == null -> LoginScreen(vm)
+                    vm.showSettings -> SettingsScreen(vm)
+                    vm.showDownloads -> DownloadsScreen(vm)
+                    vm.showPersonalize -> PersonalizeScreen(vm)
+                    detail != null -> if (dims.compact) MobileDetailScreen(detail, vm) else DetailScreen(detail, vm)
+                    tv -> MainScreen(vm)
+                    else -> MobileMainScreen(vm)
+                }
             }
             vm.menu?.let { m -> ActionMenu(m.title, m.actions) { vm.menu = null } }
             if (vm.home != null) vm.busy?.let { Spinner(it) }
@@ -210,34 +238,52 @@ fun LoginScreen(vm: AppViewModel) {
         focusedLabelColor = C.Text2, unfocusedLabelColor = C.Text2, cursorColor = Color.White,
     )
 
-    Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF1A1A24), C.Bg), radius = 1400f)), contentAlignment = Alignment.Center) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(420.dp)) {
-                Image(painterResource(R.drawable.logo), null, modifier = Modifier.size(140.dp))
-                Text("BibiTV", color = C.Text, fontSize = 52.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
-                Text("Connectez votre abonnement Xtream Codes", color = C.Text2, fontSize = 16.sp, modifier = Modifier.padding(top = 6.dp))
-                Text("v${UpdateManager.currentVersion}", color = C.Text3, fontSize = 13.sp, modifier = Modifier.padding(top = 18.dp))
+    val brand: @Composable () -> Unit = {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 420.dp)) {
+            Image(painterResource(R.drawable.logo), null, modifier = Modifier.size(if (Device.isTv) 140.dp else 96.dp))
+            Text("BibiTV", color = C.Text, fontSize = if (Device.isTv) 52.sp else 40.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
+            Text("Connectez votre abonnement Xtream Codes", color = C.Text2, fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
+            Text("v${UpdateManager.currentVersion}", color = C.Text3, fontSize = 13.sp, modifier = Modifier.padding(top = 18.dp))
+        }
+    }
+    val form: @Composable () -> Unit = {
+        Column(Modifier.widthIn(max = 460.dp).fillMaxWidth()) {
+            OutlinedTextField(server, { server = it }, label = { Text("Adresse du serveur") }, singleLine = true, colors = colors,
+                shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().focusRequester(first),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next))
+            Spacer(Modifier.height(14.dp))
+            OutlinedTextField(user, { user = it }, label = { Text("Nom d'utilisateur") }, singleLine = true, colors = colors,
+                shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next))
+            Spacer(Modifier.height(14.dp))
+            OutlinedTextField(pwd, { pwd = it }, label = { Text("Mot de passe") }, singleLine = true, colors = colors,
+                shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(),
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { vm.login(server, user, pwd) }))
+            Spacer(Modifier.height(24.dp))
+            PillButton("Se connecter", { vm.login(server, user, pwd) }, Modifier.fillMaxWidth(), primary = true, fill = true)
+            vm.loginError?.let { Text(it, color = C.Red, fontSize = 14.sp, modifier = Modifier.padding(top = 16.dp)) }
+            Text("Le mot de passe est chiffré et stocké uniquement sur ${Device.label}.", color = C.Text3, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 18.dp))
+        }
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF1A1A24), C.Bg), radius = 1400f)), contentAlignment = Alignment.Center) {
+        if (maxWidth >= 900.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                brand()
+                Spacer(Modifier.width(72.dp))
+                Box(Modifier.width(460.dp)) { form() }
             }
-            Spacer(Modifier.width(72.dp))
-            Column(Modifier.width(460.dp)) {
-                OutlinedTextField(server, { server = it }, label = { Text("Adresse du serveur") }, singleLine = true, colors = colors,
-                    shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().focusRequester(first),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next))
-                Spacer(Modifier.height(14.dp))
-                OutlinedTextField(user, { user = it }, label = { Text("Nom d'utilisateur") }, singleLine = true, colors = colors,
-                    shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next))
-                Spacer(Modifier.height(14.dp))
-                OutlinedTextField(pwd, { pwd = it }, label = { Text("Mot de passe") }, singleLine = true, colors = colors,
-                    shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth(),
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { vm.login(server, user, pwd) }))
-                Spacer(Modifier.height(24.dp))
-                PillButton("Se connecter", { vm.login(server, user, pwd) }, Modifier.fillMaxWidth(), primary = true)
-                vm.loginError?.let { Text(it, color = C.Red, fontSize = 14.sp, modifier = Modifier.padding(top = 16.dp)) }
-                Text("Le mot de passe est chiffré et stocké uniquement sur cette TV.", color = C.Text3, fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 18.dp))
+        } else {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 24.dp, vertical = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+            ) {
+                brand()
+                Spacer(Modifier.height(32.dp))
+                form()
             }
         }
     }

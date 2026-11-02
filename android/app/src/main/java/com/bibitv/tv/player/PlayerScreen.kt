@@ -23,6 +23,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,6 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.bibitv.tv.data.Device
 import com.bibitv.tv.data.SettingsStore
 import com.bibitv.tv.data.XtreamClient
 import com.bibitv.tv.ui.AppViewModel
@@ -176,6 +183,9 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
 
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
+    val tv = Device.isTv
+    val inPip = vm.inPip
+    val startPause = remember { vm.pauseSignal }
 
     fun entry() = req.playlist[index]
 
@@ -302,7 +312,7 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                         showOsd("Reprise à ${fmt(e.startMs)}")
                     }
                     state.resumed = index
-                    if (SettingsStore.matchFrameRate && activity != null) scope.launch {
+                    if (tv && SettingsStore.matchFrameRate && activity != null) scope.launch {
                         delay(800)
                         val vt = mp.currentVideoTrack
                         if (vt != null && vt.frameRateDen > 0) matchDisplayMode(activity, vt.frameRateNum.toFloat() / vt.frameRateDen)
@@ -322,9 +332,20 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
             }
         }
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Smartphone / tablette : vidéo en paysage et plein écran (barres système masquées).
+        val bars = activity?.let { androidx.core.view.WindowCompat.getInsetsController(it.window, it.window.decorView) }
+        if (!tv && activity != null) {
+            activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            bars?.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            bars?.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
         applyFormat(format)
         playAt(req.index)
         onDispose {
+            if (!tv && activity != null) {
+                bars?.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+            }
             report()
             mp.setEventListener(null)
             mp.stop()
@@ -336,18 +357,24 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
         }
     }
 
+    // App passée en arrière-plan (touche Accueil, fenêtre PiP fermée) : pause.
+    LaunchedEffect(vm.pauseSignal) { if (vm.pauseSignal != startPause && mp.isPlaying) mp.pause() }
+    // Petite fenêtre (PiP) : aucun contrôle par-dessus la vidéo.
+    LaunchedEffect(inPip) { if (inPip) { controls = false; trackMenu = null } }
+
     // Sauvegarde régulière de la position (reprise)
     LaunchedEffect(Unit) { while (true) { delay(15_000); report() } }
 
     // Masquage automatique des contrôles
     LaunchedEffect(controls, lastKey, playing) {
         if (controls && playing && trackMenu == null && error == null) {
+            if (!tv) { delay(4000); controls = false; return@LaunchedEffect }
             delay(5000)
             controls = false
         }
     }
     LaunchedEffect(controls) {
-        runCatching { if (controls) playFocus.requestFocus() else rootFocus.requestFocus() }
+        if (tv) runCatching { if (controls) playFocus.requestFocus() else rootFocus.requestFocus() }
     }
 
     BackHandler {
@@ -398,7 +425,21 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
             modifier = Modifier.fillMaxSize(),
         )
 
-        if (buffering && error == null) {
+        // Tactile : un appui affiche / masque les contrôles, un double appui à gauche / droite recule / avance.
+        if (!tv) Box(
+            Modifier.fillMaxSize().pointerInput(req.isLive) {
+                detectTapGestures(
+                    onTap = { lastKey = System.currentTimeMillis(); controls = !controls },
+                    onDoubleTap = { pos ->
+                        lastKey = System.currentTimeMillis()
+                        if (!req.isLive) { if (pos.x < size.width / 2) seekBy(-10) else seekBy(10) }
+                        else controls = true
+                    },
+                )
+            },
+        )
+
+        if (buffering && error == null && !inPip) {
             Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(52.dp))
                 Spacer(Modifier.height(14.dp))
@@ -406,7 +447,7 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
             }
         }
 
-        osd?.let {
+        if (!inPip) osd?.let {
             Text(it, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.align(Alignment.Center).padding(horizontal = 80.dp).clip(RoundedCornerShape(14.dp))
                     .background(Color(0x99000000)).padding(horizontal = 20.dp, vertical = 10.dp))
@@ -414,7 +455,7 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
 
         error?.let { msg ->
             Column(
-                Modifier.align(Alignment.Center).width(520.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xE61C1C1E)).padding(28.dp),
+                Modifier.align(Alignment.Center).padding(24.dp).widthIn(max = 520.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xE61C1C1E)).padding(28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text("Lecture impossible", color = C.Text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
@@ -426,22 +467,28 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
             }
         }
 
-        AnimatedVisibility(controls && error == null, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
+        val pad = if (tv) 48.dp else 20.dp
+        AnimatedVisibility(controls && error == null && !inPip, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize()) {
                 // Haut : titre + programme
                 Column(
                     Modifier.fillMaxWidth().align(Alignment.TopStart)
                         .background(Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent)))
-                        .padding(start = 48.dp, end = 48.dp, top = 32.dp, bottom = 60.dp),
+                        .padding(start = pad, end = pad, top = if (tv) 32.dp else 16.dp, bottom = 60.dp),
                 ) {
-                    Text(entry().title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(subtitle, color = Color(0xCCFFFFFF), fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!tv) PillButton("✕", onClose, Modifier.padding(end = 14.dp), compact = true)
+                        Column {
+                            Text(entry().title, color = Color.White, fontSize = if (tv) 28.sp else 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(subtitle, color = Color(0xCCFFFFFF), fontSize = if (tv) 16.sp else 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
                 }
                 // Bas : progression + boutons
                 Column(
                     Modifier.fillMaxWidth().align(Alignment.BottomStart)
                         .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xD9000000))))
-                        .padding(start = 48.dp, end = 48.dp, top = 70.dp, bottom = 34.dp),
+                        .padding(start = pad, end = pad, top = 70.dp, bottom = if (tv) 34.dp else 16.dp),
                 ) {
                     if (req.isLive) {
                         Text("●  EN DIRECT", color = C.Red, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
@@ -453,13 +500,17 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                         }
                     }
                     // Boutons compacts : tout tient sur la largeur de l'écran
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Smartphone : la rangée de boutons défile horizontalement si l'écran est étroit.
+                    Row(
+                        if (tv) Modifier else Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         if (req.playlist.size > 1) PillButton("⏮", { step(-1) }, compact = true)
                         if (!req.isLive) PillButton("−10 s", { seekBy(-10) }, compact = true)
                         PillButton(if (playing) "❚❚  Pause" else "▶  Lecture", { togglePause() }, Modifier.focusRequester(playFocus), primary = true, compact = true)
                         if (!req.isLive) PillButton("+30 s", { seekBy(30) }, compact = true)
                         if (req.playlist.size > 1) PillButton("⏭", { step(1) }, compact = true)
-                        Spacer(Modifier.weight(1f))
+                        if (tv) Spacer(Modifier.weight(1f)) else Spacer(Modifier.width(14.dp))
                         PillButton("Infos", {
                             val vt = mp.currentVideoTrack
                             showOsd(
@@ -482,9 +533,9 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
         trackMenu?.let { (title, actions) ->
             val first = remember(title) { FocusRequester() }
             Box(Modifier.fillMaxSize().background(Color(0x99000000)), contentAlignment = Alignment.CenterEnd) {
-                Column(Modifier.width(420.dp).padding(end = 48.dp).clip(RoundedCornerShape(18.dp)).background(C.Surface).padding(18.dp)) {
+                Column(Modifier.padding(end = if (tv) 48.dp else 16.dp, start = 16.dp).widthIn(max = 420.dp).clip(RoundedCornerShape(18.dp)).background(C.Surface).padding(18.dp)) {
                     Text(title, color = C.Text2, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp, start = 6.dp))
-                    LazyColumn(Modifier.height(380.dp)) {
+                    LazyColumn(Modifier.heightIn(max = 380.dp)) {
                         itemsIndexed(actions) { i, (label, action) ->
                             Focusable({ action(); trackMenu = null }, (if (i == 0) Modifier.focusRequester(first) else Modifier).fillMaxWidth().padding(vertical = 3.dp),
                                 shape = RoundedCornerShape(10.dp), focusedScale = 1.02f, borderWidth = 0.dp) { f ->

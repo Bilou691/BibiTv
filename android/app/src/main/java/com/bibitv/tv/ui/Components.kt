@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -54,6 +57,27 @@ import com.bibitv.tv.data.ProfileStore
 import com.bibitv.tv.data.RankedItem
 
 // ===== Palette (inspirée de tvOS, mode sombre) =====
+/**
+ * Dimensions de l'interface selon l'écran : TV (vue de loin), tablette, smartphone.
+ * Les composants partagés (rangées, affiches…) les lisent pour s'adapter.
+ */
+data class Dims(
+    val compact: Boolean,
+    val gutter: Dp,
+    val gap: Dp,
+    val shelfTitle: TextUnit,
+    val poster: Dp,
+    val channel: Dp,
+    val rankWidth: Dp,
+    val rankFont: TextUnit,
+)
+
+val TvDims = Dims(compact = false, gutter = 48.dp, gap = 22.dp, shelfTitle = 22.sp, poster = 150.dp, channel = 200.dp, rankWidth = 230.dp, rankFont = 150.sp)
+val TabletDims = Dims(compact = false, gutter = 28.dp, gap = 16.dp, shelfTitle = 20.sp, poster = 132.dp, channel = 180.dp, rankWidth = 196.dp, rankFont = 120.sp)
+val PhoneDims = Dims(compact = true, gutter = 16.dp, gap = 12.dp, shelfTitle = 18.sp, poster = 108.dp, channel = 150.dp, rankWidth = 158.dp, rankFont = 96.sp)
+
+val LocalDims = staticCompositionLocalOf { TvDims }
+
 object C {
     val Bg = Color(0xFF0A0A0C)
     val Surface = Color(0xFF1C1C1E)
@@ -107,6 +131,7 @@ fun PillButton(
     activeColor: Color? = null,
     onFocus: (() -> Unit)? = null,
     compact: Boolean = false,
+    fill: Boolean = false,
 ) {
     Focusable(onClick, modifier, onFocus = onFocus, shape = RoundedCornerShape(24.dp), focusedScale = 1.05f, borderWidth = 0.dp) { focused ->
         val bg = when {
@@ -116,7 +141,7 @@ fun PillButton(
             else -> Color(0x26FFFFFF)
         }
         val fg = if (focused || ((primary || selected) && activeColor == null)) Color(0xFF0A0A0C) else C.Text
-        Box(Modifier.background(bg).padding(horizontal = if (compact) 16.dp else 22.dp, vertical = if (compact) 8.dp else 10.dp), contentAlignment = Alignment.Center) {
+        Box((if (fill) Modifier.fillMaxWidth() else Modifier).background(bg).padding(horizontal = if (compact) 16.dp else 22.dp, vertical = if (compact) 8.dp else 10.dp), contentAlignment = Alignment.Center) {
             Text(text, color = fg, fontSize = if (compact) 15.sp else 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
@@ -144,10 +169,12 @@ fun PosterCard(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     onFocus: (() -> Unit)? = null,
-    width: Dp = 150.dp,
+    width: Dp = Dp.Unspecified,
+    fill: Boolean = false,
 ) {
     @Suppress("UNUSED_VARIABLE") val rev = ProfileStore.revision.intValue // rafraîchit la pastille « VU »
-    Column(Modifier.width(width)) {
+    val w = if (width == Dp.Unspecified) LocalDims.current.poster else width
+    Column(if (fill) Modifier.fillMaxWidth() else Modifier.width(w)) {
         Focusable(onClick, Modifier.fillMaxWidth().aspectRatio(2f / 3f), onLongClick, onFocus) {
             Poster(item.imageUrl, item.initial, Modifier.fillMaxSize())
             if (ProfileStore.isWatched(item.key)) WatchedBadge(Modifier.align(Alignment.TopEnd).padding(8.dp))
@@ -167,14 +194,16 @@ fun ChannelCard(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     onFocus: (() -> Unit)? = null,
-    width: Dp = 200.dp,
+    width: Dp = Dp.Unspecified,
+    fill: Boolean = false,
 ) {
-    Column(Modifier.width(width)) {
+    val w = if (width == Dp.Unspecified) LocalDims.current.channel else width
+    Column(if (fill) Modifier.fillMaxWidth() else Modifier.width(w)) {
         Focusable(onClick, Modifier.fillMaxWidth().aspectRatio(16f / 9f), onLongClick, onFocus) {
             Box(Modifier.fillMaxSize().background(C.Surface), contentAlignment = Alignment.Center) {
                 if (logo == null) Text(title.take(1).uppercase(), color = C.Text3, fontSize = 36.sp, fontWeight = FontWeight.Bold)
                 else AsyncImage(model = logo, contentDescription = null, contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 26.dp, vertical = 16.dp))
+                    modifier = Modifier.fillMaxSize().padding(horizontal = w * 0.13f, vertical = w * 0.08f))
             }
         }
         Text(title, color = Color(0xFFE5E5EA), fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1,
@@ -185,11 +214,12 @@ fun ChannelCard(
 /** Grand numéro du Top 10 + affiche. */
 @Composable
 fun RankedPoster(r: RankedItem, onClick: () -> Unit, onLongClick: (() -> Unit)?) {
-    Box(Modifier.width(230.dp)) {
+    val d = LocalDims.current
+    Box(Modifier.width(d.rankWidth)) {
         Text(
-            r.rank.toString(), fontSize = 150.sp, fontWeight = FontWeight.Black, lineHeight = 150.sp,
+            r.rank.toString(), fontSize = d.rankFont, fontWeight = FontWeight.Black, lineHeight = d.rankFont,
             style = androidx.compose.ui.text.TextStyle(brush = Brush.verticalGradient(listOf(Color(0xB3FFFFFF), Color(0x14FFFFFF)))),
-            modifier = Modifier.align(Alignment.TopStart).padding(top = 40.dp),
+            modifier = Modifier.align(Alignment.TopStart).padding(top = d.poster * 0.27f),
         )
         Box(Modifier.align(Alignment.TopEnd)) { PosterCard(r.item, onClick, onLongClick) }
     }
@@ -197,9 +227,10 @@ fun RankedPoster(r: RankedItem, onClick: () -> Unit, onLongClick: (() -> Unit)?)
 
 @Composable
 fun RankedChannel(r: RankedItem, onClick: () -> Unit, onFocus: () -> Unit) {
-    Box(Modifier.width(270.dp)) {
+    val d = LocalDims.current
+    Box(Modifier.width(d.channel * 1.35f)) {
         Text(
-            r.rank.toString(), fontSize = 110.sp, fontWeight = FontWeight.Black, lineHeight = 110.sp,
+            r.rank.toString(), fontSize = d.rankFont * 0.73f, fontWeight = FontWeight.Black, lineHeight = d.rankFont * 0.73f,
             style = androidx.compose.ui.text.TextStyle(brush = Brush.verticalGradient(listOf(Color(0xB3FFFFFF), Color(0x14FFFFFF)))),
             modifier = Modifier.align(Alignment.TopStart),
         )
@@ -210,7 +241,7 @@ fun RankedChannel(r: RankedItem, onClick: () -> Unit, onFocus: () -> Unit) {
 /** Reprendre : affiche + barre de progression. */
 @Composable
 fun HistoryCard(h: HistoryEntry, onClick: () -> Unit, onLongClick: () -> Unit) {
-    Column(Modifier.width(150.dp)) {
+    Column(Modifier.width(LocalDims.current.poster)) {
         Focusable(onClick, Modifier.fillMaxWidth().aspectRatio(2f / 3f), onLongClick) {
             Poster(h.imageUrl, h.title.take(1).uppercase(), Modifier.fillMaxSize())
             Box(Modifier.fillMaxWidth().height(70.dp).align(Alignment.BottomCenter)
@@ -237,17 +268,18 @@ fun ProgressLine(value: Float, modifier: Modifier = Modifier, color: Color = Col
 @Composable
 fun <T> ShelfRow(title: String, subtitle: String?, items: List<T>, key: ((T) -> Any)? = null, action: (@Composable () -> Unit)? = null, content: @Composable (T) -> Unit) {
     if (items.isEmpty()) return
-    Column(Modifier.padding(top = 30.dp)) {
-        Row(Modifier.padding(horizontal = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+    val d = LocalDims.current
+    Column(Modifier.padding(top = if (d.compact) 20.dp else 30.dp)) {
+        Row(Modifier.padding(horizontal = d.gutter), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(title, color = C.Text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(title, color = C.Text, fontSize = d.shelfTitle, fontWeight = FontWeight.Bold)
                 if (!subtitle.isNullOrEmpty()) Text(subtitle, color = C.Text2, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
             }
             action?.invoke()
         }
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(22.dp),
+            contentPadding = PaddingValues(horizontal = d.gutter, vertical = if (d.compact) 10.dp else 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(d.gap),
         ) {
             if (key != null) items(items, key = key) { content(it) } else items(items) { content(it) }
         }
@@ -272,7 +304,7 @@ fun ActionMenu(title: String, actions: List<Pair<String, () -> Unit>>, onDismiss
     val first = remember { FocusRequester() }
     Box(Modifier.fillMaxSize().background(Color(0xB3000000)), contentAlignment = Alignment.Center) {
         Column(
-            Modifier.width(420.dp).clip(RoundedCornerShape(18.dp)).background(C.Surface).padding(18.dp),
+            Modifier.padding(24.dp).widthIn(max = 420.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.Surface).padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(title, color = C.Text2, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,

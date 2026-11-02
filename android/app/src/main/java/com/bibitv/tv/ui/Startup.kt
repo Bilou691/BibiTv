@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -99,7 +100,7 @@ fun LoadingScreen(status: String) {
                 label = "quote",
             ) { i ->
                 val (quote, film) = quotes[i]
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(760.dp)) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 760.dp).padding(horizontal = 24.dp)) {
                     Text("« $quote »", color = Color(0xFFE5E5EA), fontSize = 20.sp, fontStyle = FontStyle.Italic, textAlign = TextAlign.Center)
                     Text("— $film", color = C.Text2, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
                 }
@@ -116,9 +117,9 @@ fun UpdatePromptScreen(vm: AppViewModel) {
     BackHandler { if (vm.updateProgress == null) vm.skipUpdate() }
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         Image(painterResource(R.drawable.splash_background), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(620.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 620.dp).padding(horizontal = 24.dp)) {
             Image(painterResource(R.drawable.splash_icon), null, modifier = Modifier.width(240.dp).height(172.dp))
-            Text("Une mise à jour est disponible", color = C.Text, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+            Text("Une mise à jour est disponible", color = C.Text, fontSize = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
             Text("BibiTV ${u.version}  ·  vous avez la version ${UpdateManager.currentVersion}", color = C.Text2, fontSize = 15.sp,
                 modifier = Modifier.padding(top = 8.dp))
             val p = vm.updateProgress

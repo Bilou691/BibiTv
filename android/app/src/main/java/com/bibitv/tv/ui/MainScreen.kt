@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -100,7 +102,7 @@ private fun TopBar(vm: AppViewModel) {
 // =================== Accueil ===================
 
 @Composable
-private fun HomeScreen(vm: AppViewModel) {
+internal fun HomeScreen(vm: AppViewModel) {
     LaunchedEffect(Unit) { vm.buildHome() }
     val home = vm.home ?: return
     val rev = ProfileStore.revision.intValue
@@ -115,6 +117,7 @@ private fun HomeScreen(vm: AppViewModel) {
     val recentSeries = remember(rev, series) { series.filter { !hide || !ProfileStore.isWatched(it.key) }.sortedByDescending { it.added }.take(24) }
     val live = vm.items[Section.Live] ?: emptyList()
     val topChannelItems = home.topChannels.map { it.item }
+    val gutter = LocalDims.current.gutter
 
     LazyColumn(state = vm.homeState, contentPadding = PaddingValues(bottom = 60.dp)) {
         item { Hero(vm, home.hero) }
@@ -137,11 +140,11 @@ private fun HomeScreen(vm: AppViewModel) {
         item {
             if (forMovies.isEmpty() && forSeries.isEmpty()) {
                 Row(
-                    Modifier.padding(start = 48.dp, end = 48.dp, top = 30.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                    Modifier.padding(start = gutter, end = gutter, top = 30.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
                         .background(Brush.linearGradient(listOf(Color(0x330A84FF), Color(0x33BF5AF2)))).padding(26.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(Modifier.weight(1f)) {
+                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
                         Text("Pour toi", color = C.Text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                         Text("Dites-nous ce que vous aimez : BibiTV vous proposera des films et des séries qui vous ressemblent.",
                             color = Color(0xFFD1D1D6), fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
@@ -194,7 +197,7 @@ private fun HomeScreen(vm: AppViewModel) {
         }
         if (home.errors.isNotEmpty()) item {
             Text("Une partie du catalogue n'a pas pu être chargée : ${home.errors.joinToString(" / ")}", color = C.Text2,
-                fontSize = 15.sp, modifier = Modifier.padding(48.dp))
+                fontSize = 15.sp, modifier = Modifier.padding(gutter))
         }
     }
 }
@@ -202,11 +205,12 @@ private fun HomeScreen(vm: AppViewModel) {
 @Composable
 private fun Hero(vm: AppViewModel, item: MediaItem?) {
     item ?: return
+    if (LocalDims.current.compact) return CompactHero(vm, item)
     val info = vm.heroInfo
-    Box(Modifier.padding(horizontal = 48.dp).fillMaxWidth().height(380.dp).clip(RoundedCornerShape(24.dp)).background(C.Surface)) {
+    Box(Modifier.padding(horizontal = LocalDims.current.gutter).fillMaxWidth().height(380.dp).clip(RoundedCornerShape(24.dp)).background(C.Surface)) {
         AsyncImage(model = info?.backdrop ?: item.imageUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color(0xF00A0A0C), 0.45f to Color(0x990A0A0C), 0.85f to Color.Transparent)))
-        Column(Modifier.align(Alignment.BottomStart).padding(40.dp).width(620.dp)) {
+        Column(Modifier.align(Alignment.BottomStart).padding(40.dp).widthIn(max = 620.dp)) {
             Text("N°1 DES FILMS CETTE SEMAINE", color = C.Yellow, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             Text(item.title, color = C.Text, fontSize = 40.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 6.dp))
@@ -226,10 +230,37 @@ private fun Hero(vm: AppViewModel, item: MediaItem?) {
     }
 }
 
+/** À la une sur smartphone : image 16:9 pleine largeur, texte et boutons dessous. */
+@Composable
+private fun CompactHero(vm: AppViewModel, item: MediaItem) {
+    val info = vm.heroInfo
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(C.Surface)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+            AsyncImage(model = info?.backdrop ?: item.imageUrl, contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to C.Surface)))
+        }
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+            Text("N°1 DES FILMS CETTE SEMAINE", color = C.Yellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(item.title, color = C.Text, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp))
+            val meta = listOfNotNull(vm.yearText(info?.releaseDate) ?: item.year, info?.genre, MediaItem.formatRating(info?.rating ?: item.rating))
+            if (meta.isNotEmpty()) Text(meta.joinToString("  ·  "), color = C.Text2, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp))
+            Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PillButton("▶  Lecture", {
+                    val v = item.variants.firstOrNull() ?: item
+                    vm.playMovie(item, v, v.extension, v.tag)
+                }, Modifier.weight(1f), primary = true, fill = true)
+                PillButton("Plus d'infos", { vm.open(item) }, Modifier.weight(1f), fill = true)
+            }
+        }
+    }
+}
+
 // =================== Catalogue ===================
 
 @Composable
-private fun CatalogScreen(vm: AppViewModel, section: Section) {
+internal fun CatalogScreen(vm: AppViewModel, section: Section) {
     LaunchedEffect(section) { vm.loadSection(section); vm.clearEpg() }
     val all = vm.items[section]
     val category = vm.catalogCategory[section] ?: Category.ALL_ID
@@ -390,12 +421,13 @@ private fun NowBlock(e: EpgEntry) {
 // =================== Mise à jour ===================
 
 @Composable
-private fun UpdateBanner(vm: AppViewModel, modifier: Modifier) {
+internal fun UpdateBanner(vm: AppViewModel, modifier: Modifier) {
     val u = vm.update ?: return
     var dismissed by remember(u.version) { mutableStateOf(false) }
     if (dismissed) return
     Row(
-        modifier.width(720.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xF21C1C1E)).padding(horizontal = 22.dp, vertical = 16.dp),
+        modifier.padding(horizontal = 16.dp).widthIn(max = 720.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xF21C1C1E))
+            .padding(horizontal = 22.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -423,7 +455,7 @@ private fun SearchDialog(initial: String, onDismiss: () -> Unit, onSearch: (Stri
     var text by remember { mutableStateOf(initial) }
     val field = remember { androidx.compose.ui.focus.FocusRequester() }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        Column(Modifier.width(560.dp).clip(RoundedCornerShape(20.dp)).background(C.Surface).padding(26.dp)) {
+        Column(Modifier.widthIn(max = 560.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(C.Surface).padding(26.dp)) {
             Text("Rechercher", color = C.Text, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(16.dp))
             OutlinedTextField(

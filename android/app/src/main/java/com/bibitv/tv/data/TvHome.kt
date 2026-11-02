@@ -24,7 +24,8 @@ object TvHome {
     fun resumeLink(key: String): Uri = Uri.parse("$SCHEME://reprendre?key=${Uri.encode(key)}")
     private val homeLink: Uri = Uri.parse("$SCHEME://accueil")
 
-    private fun supported() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+    /** Rangées de l'accueil Android TV : sans objet sur smartphone / tablette. */
+    private fun supported() = Device.isTv && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
 
     private fun prefs(context: Context) = context.getSharedPreferences("tvhome", Context.MODE_PRIVATE)
 

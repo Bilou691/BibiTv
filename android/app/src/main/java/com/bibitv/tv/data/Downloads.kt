@@ -143,7 +143,7 @@ object DownloadManager {
             val removable = i > 0 || Environment.isExternalStorageRemovable(dir)
             val desc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) sm?.getStorageVolume(dir)?.getDescription(app) else null
             val label = when {
-                !removable -> "Mémoire de la TV"
+                !removable -> if (Device.isTv) "Mémoire de la TV" else "Mémoire de l'appareil"
                 desc != null -> desc
                 else -> "Stockage externe ${i}"
             }
