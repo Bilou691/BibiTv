@@ -40,6 +40,10 @@ data class StorageOption(
     val treeUri: Uri?,
     val freeBytes: Long,
     val removable: Boolean,
+    /** false : support débranché (le dossier n'existe plus, on n'écrit rien). */
+    val available: Boolean = true,
+    /** Dossier d'origine dans Android/data (anciens téléchargements à migrer). */
+    val legacyDir: File? = null,
 )
 
 enum class DownloadState { Queued, Running, Done, Failed, Canceled }
@@ -124,7 +128,7 @@ object DownloadManager {
 
     /** Emplacement d'un téléchargement enregistré, même si le support est débranché. */
     private fun optionFromId(id: String): StorageOption = storageOptions().firstOrNull { it.id == id } ?: when {
-        id.startsWith("vol:") -> StorageOption(id, "Support débranché", File(id.removePrefix("vol:")), null, -1, true)
+        id.startsWith("vol:") -> StorageOption(id, "Disque absent", File(id.removePrefix("vol:")), null, -1, true, available = false)
         id.startsWith("tree:") -> StorageOption(id, "Dossier choisi", null, Uri.parse(id.removePrefix("tree:")), -1, true)
         else -> StorageOption(id, "Inconnu", null, null, -1, true)
     }
@@ -147,7 +151,11 @@ object DownloadManager {
                 desc != null -> desc
                 else -> "Stockage externe ${i}"
             }
-            list += StorageOption("vol:${dir.absolutePath}", label, dir, null, free(dir), removable)
+            // Dossier public (lisible par VLC et les autres lecteurs) si l'accès complet aux fichiers est accordé.
+            val root = dir.absolutePath.substringBefore("/Android/data")
+            val publicDir = File(root, "Movies/BibiTV")
+            val usePublic = hasAllFilesAccess() && root != dir.absolutePath
+            list += StorageOption("vol:${dir.absolutePath}", label, if (usePublic) publicDir else dir, null, free(dir), removable, legacyDir = dir)
         }
         SettingsStore.downloadTarget?.takeIf { it.startsWith("tree:") }?.let { t ->
             val uri = Uri.parse(t.removePrefix("tree:"))
@@ -157,12 +165,58 @@ object DownloadManager {
         return list
     }
 
+    /** Accès complet aux fichiers : nécessaire pour écrire dans un dossier public (Movies/BibiTV). */
+    fun hasAllFilesAccess(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Environment.isExternalStorageManager()
+    } else {
+        app.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    /** Intent vers l'écran système « Accès à tous les fichiers » (Android 11+). */
+    fun allFilesAccessIntent(): Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${app.packageName}"))
+    } else null
+
     fun currentTarget(): StorageOption {
         val options = storageOptions()
         val saved = SettingsStore.downloadTarget
-        return options.firstOrNull { it.id == saved }
+        options.firstOrNull { it.id == saved }?.let { return it }
+        // Support choisi mais débranché : on le garde (« disque absent ») sauf si le repli est activé.
+        if (saved != null && saved.startsWith("vol:") && !SettingsStore.downloadFallbackInternal) return optionFromId(saved)
+        return options.firstOrNull { !it.removable && it.treeUri == null }
+            ?.takeIf { saved != null } // repli demandé vers la mémoire interne
             ?: options.firstOrNull { it.removable } // une clé USB est préférée à la mémoire de la TV
             ?: options.first()
+    }
+
+    /**
+     * Déplace les films déjà téléchargés dans Android/data/com.bibitv.tv vers le dossier public du support,
+     * et met à jour l'index. Renvoie le nombre de fichiers déplacés.
+     */
+    suspend fun migrateLegacy(): Int = withContext(Dispatchers.IO) {
+        var moved = 0
+        for (item in items.toList()) {
+            val loc = item.location ?: continue
+            val dest = item.target.path ?: continue
+            val legacy = item.target.legacyDir ?: continue
+            if (item.state != DownloadState.Done || !loc.startsWith(legacy.absolutePath) || dest == legacy) continue
+            val src = File(loc)
+            if (!src.exists()) continue
+            val rel = src.relativeTo(legacy).path
+            val target = File(dest, rel)
+            try {
+                target.parentFile?.mkdirs()
+                if (!src.renameTo(target)) {
+                    src.copyTo(target, overwrite = true)
+                    src.delete()
+                }
+                withContext(Dispatchers.Main) { item.location = target.absolutePath }
+                moved++
+            } catch (_: Exception) {
+            }
+        }
+        withContext(Dispatchers.Main) { persist() }
+        moved
     }
 
     fun setTarget(option: StorageOption) {
@@ -186,6 +240,14 @@ object DownloadManager {
 
     fun enqueue(title: String, url: String, relativePath: String): DownloadItem {
         val target = currentTarget()
+        if (!target.available) {
+            val item = DownloadItem(title, url, relativePath, target)
+            item.state = DownloadState.Failed
+            item.status = "Disque absent — rebranchez-le puis « Réessayer »"
+            items.add(0, item)
+            persist()
+            return item
+        }
         items.firstOrNull { it.relativePath == relativePath && it.target.id == target.id }?.let {
             if (it.state == DownloadState.Failed || it.state == DownloadState.Canceled) retry(it)
             return it
@@ -251,6 +313,12 @@ object DownloadManager {
     }
 
     private suspend fun download(item: DownloadItem) {
+        if (!item.target.available || !storageOptions().any { it.id == item.target.id }) {
+            item.state = DownloadState.Failed
+            item.status = "Disque absent — rebranchez-le puis « Réessayer »"
+            persist()
+            return
+        }
         item.state = DownloadState.Running
         item.status = "Connexion…"
         persist()

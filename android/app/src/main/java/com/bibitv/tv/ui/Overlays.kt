@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -231,6 +232,17 @@ fun DownloadsScreen(vm: AppViewModel) {
     val treePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri != null) { DownloadManager.setTreeTarget(uri); refresh++ }
     }
+    var hasAccess by remember(refresh) { mutableStateOf(DownloadManager.hasAllFilesAccess()) }
+    var fallback by remember { mutableStateOf(SettingsStore.downloadFallbackInternal) }
+    var migrateMsg by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refresh++ }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refresh++ }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
     val canPickFolder = remember {
         Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).resolveActivity(context.packageManager) != null
     }
@@ -250,19 +262,44 @@ fun DownloadsScreen(vm: AppViewModel) {
                         Column(Modifier.padding(start = 14.dp)) {
                             Text((if (o.removable) "🔌  " else if (tv) "📺  " else "📱  ") + o.label, color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                             Text(if (o.freeBytes >= 0) "${DownloadManager.size(o.freeBytes)} disponibles" else "Dossier choisi", color = C.Text2, fontSize = 13.sp)
+                            o.path?.let { Text(it.absolutePath, color = C.Text3, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                     }
                 }
             }
+            if (!current.available) {
+                Text("Disque absent : rebranchez-le, ou activez le repli ci-dessous.", color = C.Red, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp))
+            }
+            Spacer(Modifier.height(10.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (!hasAccess) {
+                    PillButton("Autoriser l'accès aux fichiers", {
+                        val i = DownloadManager.allFilesAccessIntent()
+                        runCatching {
+                            if (i != null) context.startActivity(i)
+                            else permLauncher.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        }
+                    }, primary = true)
+                } else {
+                    PillButton("Déplacer les anciens films", {
+                        scope.launch { val n = DownloadManager.migrateLegacy(); migrateMsg = "$n fichier(s) déplacé(s)"; refresh++ }
+                    })
+                }
+                PillButton(if (fallback) "Repli mémoire interne : oui" else "Repli mémoire interne : non", {
+                    fallback = !fallback; SettingsStore.downloadFallbackInternal = fallback; refresh++
+                })
+            }
+            migrateMsg?.let { Text(it, color = C.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp)) }
             if (canPickFolder) {
                 Spacer(Modifier.height(10.dp))
                 PillButton("Choisir un dossier…", { runCatching { treePicker.launch(null) } })
             }
             Text(
                 if (tv) "Branchez une clé USB ou un disque dur sur la TV : il apparaît ici automatiquement (actualiser). " +
-                    "Les fichiers sont rangés dans Android/data/com.bibitv.tv/files/Movies sur le support choisi."
+                    (if (hasAccess) "Les films sont rangés dans Movies/BibiTV sur le support choisi : VLC et les autres lecteurs peuvent les lire."
+                        else "Sans l'accès aux fichiers, ils restent dans Android/data/com.bibitv.tv (invisibles pour les autres lecteurs).")
                 else "Les fichiers téléchargés se regardent sans connexion, depuis cet écran. " +
-                    "Ils sont rangés dans Android/data/com.bibitv.tv/files/Movies.",
+                    (if (hasAccess) "Ils sont rangés dans Movies/BibiTV." else "Ils sont rangés dans Android/data/com.bibitv.tv/files/Movies."),
                 color = C.Text3, fontSize = 12.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 16.dp),
             )
             Spacer(Modifier.height(10.dp))

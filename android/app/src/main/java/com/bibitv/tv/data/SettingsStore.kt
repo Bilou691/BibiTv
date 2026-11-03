@@ -58,6 +58,11 @@ object SettingsStore {
         get() = prefs.getString("download_target", null)
         set(v) = prefs.edit().putString("download_target", v).apply()
 
+    /** Si le disque choisi est débranché : basculer sur la mémoire interne au lieu d'attendre. */
+    var downloadFallbackInternal: Boolean
+        get() = prefs.getBoolean("download_fallback_internal", false)
+        set(v) = prefs.edit().putBoolean("download_fallback_internal", v).apply()
+
     var password: String?
         get() {
             val data = prefs.getString("pwd", null) ?: return null
