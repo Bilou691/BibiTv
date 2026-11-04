@@ -267,6 +267,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         grouped.forEach { byKey[it.key] = it }
         categories[section] = catList
         items[section] = grouped
+        if (section == Section.Live) ProfileStore.seedLiveFavorites(grouped)
         loadErrors.remove(section)
         catalogLoadedAt = System.currentTimeMillis()
     }
@@ -291,7 +292,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         all.forEach { i -> i.categoryIds.forEach { counts[it] = (counts[it] ?: 0) + 1 } }
         val list = mutableListOf<Category>()
         val fav = all.count { ProfileStore.isFavorite(it) }
-        if (fav > 0) list += Category(Category.FAVORITES_ID, "Ma liste", fav)
+        if (fav > 0) list += Category(Category.FAVORITES_ID, if (section == Section.Live) "Favoris" else "Ma liste", fav)
         list += Category(Category.ALL_ID, if (section == Section.Live) "Toutes les chaînes" else "Récemment ajoutés", all.size)
         if (section == Section.Live) {
             val brands = ChannelBrands.names.mapNotNull { b -> counts[ChannelBrands.PREFIX + b]?.let { Category(ChannelBrands.PREFIX + b, b, it) } }
@@ -688,7 +689,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun itemMenu(item: MediaItem) {
         val actions = mutableListOf<Pair<String, () -> Unit>>(
-            (if (ProfileStore.isFavorite(item)) "Retirer de Ma liste" else "Ajouter à Ma liste") to { ProfileStore.toggleFavorite(item) },
+            (if (ProfileStore.isFavorite(item)) (if (item.kind == Section.Live) "Retirer des Favoris" else "Retirer de Ma liste") else (if (item.kind == Section.Live) "Ajouter aux Favoris" else "Ajouter à Ma liste")) to { ProfileStore.toggleFavorite(item) },
         )
         if (item.kind != Section.Live) {
             val watched = ProfileStore.isWatched(item.key)

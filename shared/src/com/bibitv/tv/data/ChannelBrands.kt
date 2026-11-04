@@ -67,7 +67,7 @@ object ChannelBrands {
         return s
     }
 
-    private fun compactName(title: String): String {
+    fun compactName(title: String): String {
         val t = Regex("""^\s*(\[[^]]{1,6}]|[A-Za-z]{2,4}\s*[|:\-–])\s*""").replace(title, "")
         return normalize(t, false).split(' ').filter { it.isNotEmpty() && it !in qualityTags }.joinToString("")
     }

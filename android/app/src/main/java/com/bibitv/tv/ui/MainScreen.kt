@@ -168,6 +168,12 @@ internal fun HomeScreen(vm: AppViewModel) {
             }
         }
         item {
+            val favChans = live.filter { ProfileStore.isFavorite(it) }
+            ShelfRow("Favoris", "Tes chaînes préférées (appui long sur une chaîne pour en ajouter)", favChans, key = { it.key }) { ch ->
+                ChannelCard(ch.title, ch.imageUrl, { vm.playChannel(ch, favChans) }, { vm.itemMenu(ch) }, onFocus = { vm.focusChannel(ch) })
+            }
+        }
+        item {
             ShelfRow("Top 10 des chaînes TV en France", "Les chaînes les plus regardées en France (audiences Médiamétrie)",
                 home.topChannels, key = { it.item.key }) { r ->
                 RankedChannel(r, { vm.playChannel(r.item, topChannelItems) }, { vm.focusChannel(r.item) })

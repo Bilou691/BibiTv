@@ -150,6 +150,19 @@ object ProfileStore {
         save()
     }
 
+    /**
+     * Pré-remplit les Favoris depuis un fichier optionnel posé sur la box (par ADB) :
+     * files/seed-favorites.txt, un nom de chaîne par ligne (ex. « MBC 4 »). Lu une fois puis supprimé.
+     */
+    fun seedLiveFavorites(live: List<MediaItem>) {
+        val f = appContext?.getExternalFilesDir(null)?.let { File(it, "seed-favorites.txt") } ?: return
+        if (!f.exists()) return
+        val wanted = try { f.readLines().map { ChannelBrands.compactName(it) }.filter { it.isNotEmpty() }.toSet() } catch (_: Exception) { return }
+        live.filter { ChannelBrands.compactName(it.title) in wanted }.forEach { profile.favorites.add(it.key) }
+        f.delete()
+        save()
+    }
+
     @Synchronized
     fun setHideWatched(hide: Boolean) {
         profile.hideWatched = hide
