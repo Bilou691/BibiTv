@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.bibitv.tv.data.Device
+import com.bibitv.tv.data.ProfileStore
 import com.bibitv.tv.data.SettingsStore
 import com.bibitv.tv.data.XtreamClient
 import com.bibitv.tv.ui.AppViewModel
@@ -510,6 +511,14 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                         PillButton(if (playing) "❚❚  Pause" else "▶  Lecture", { togglePause() }, Modifier.focusRequester(playFocus), primary = true, compact = true)
                         if (!req.isLive) PillButton("+30 s", { seekBy(30) }, compact = true)
                         if (req.playlist.size > 1) PillButton("⏭", { step(1) }, compact = true)
+                        val favCh = entry().channel
+                        if (req.isLive && favCh != null) {
+                            val isFav = ProfileStore.revision.intValue >= 0 && ProfileStore.isFavorite(favCh)
+                            PillButton(if (isFav) "★ Favori" else "☆ Favori", {
+                                ProfileStore.toggleFavorite(favCh)
+                                showOsd(if (ProfileStore.isFavorite(favCh)) "Ajouté aux Favoris" else "Retiré des Favoris", 2000)
+                            }, compact = true, selected = isFav)
+                        }
                         if (tv) Spacer(Modifier.weight(1f)) else Spacer(Modifier.width(14.dp))
                         PillButton("Infos", {
                             val vt = mp.currentVideoTrack
