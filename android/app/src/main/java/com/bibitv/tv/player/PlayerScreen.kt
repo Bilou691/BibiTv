@@ -86,10 +86,17 @@ object Vlc {
     @Volatile private var lib: LibVLC? = null
     private var libDirect: Boolean? = null
 
+    /**
+     * Fil unique pour libérer les lecteurs et l'ancienne instance LibVLC : stop() / release() peuvent
+     * bloquer plusieurs secondes (figeant l'interface), et l'ordre garantit qu'une instance n'est jamais
+     * libérée avant les lecteurs qui l'utilisent.
+     */
+    val worker: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     fun get(context: Context): LibVLC = synchronized(this) {
         val direct = SettingsStore.directRendering
         lib?.takeIf { libDirect == direct } ?: create(context, direct).also {
-            lib?.release()
+            lib?.let { old -> worker.execute { runCatching { old.release() } } }
             lib = it
             libDirect = direct
         }
@@ -180,7 +187,19 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
     var lastKey by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var format by remember { mutableIntStateOf(SettingsStore.videoFormat) }
     var trackMenu by remember { mutableStateOf<Pair<String, List<Pair<String, () -> Unit>>>?>(null) }
-    val state = remember { object { var resumed = -1; var liveRetries = 0; var pfd: ParcelFileDescriptor? = null } }
+    var bufferPct by remember { mutableIntStateOf(0) }
+    var attempt by remember { mutableIntStateOf(0) }
+    val state = remember {
+        object {
+            var resumed = -1
+            var liveRetries = 0
+            var pfd: ParcelFileDescriptor? = null
+            /** Position de reprise imposée (relance après blocage) ; -1 = utiliser celle de l'historique. */
+            var resumeAt = -1L
+            var stallRetries = 0
+            var stallBase = 0L
+        }
+    }
 
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -199,10 +218,13 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
         scope.launch { delay(durationMs); if (osd == text) osd = null }
     }
 
-    fun playAt(i: Int) {
+    fun playAt(i: Int, resumeAt: Long = -1L) {
         index = i
+        attempt++
         val e = req.playlist[i]
-        time = 0; length = 0; error = null; buffering = true; playing = false; seekable = false
+        state.resumeAt = resumeAt
+        if (resumeAt >= 0) state.resumed = -1 // forcer le repositionnement une fois le flux rouvert
+        time = 0; length = 0; error = null; buffering = true; bufferPct = 0; playing = false; seekable = false
         subtitle = e.subtitle
         state.pfd?.close(); state.pfd = null
         val media = try {
@@ -228,7 +250,9 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
         }
         // Décodage matériel (MediaCodec) : indispensable pour la 4K HEVC fluide.
         media.setHWDecoderEnabled(true, false)
-        media.addOption(":network-caching=3000")
+        // Direct : tampon court (zapping rapide). Films et séries : tampon large pour absorber les
+        // ralentissements du serveur sans retomber sur le logo de chargement.
+        media.addOption(":network-caching=${if (req.isLive) 3000 else 10000}")
         mp.media = media
         media.release()
         mp.play()
@@ -308,10 +332,16 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                     playing = true; buffering = false; error = null; state.liveRetries = 0
                     seekable = mp.isSeekable
                     val e = entry()
-                    if (state.resumed != index && e.startMs > 5000 && mp.isSeekable) {
-                        mp.setTime(e.startMs)
-                        showOsd("Reprise à ${fmt(e.startMs)}")
+                    val target = if (state.resumeAt >= 0) state.resumeAt else e.startMs
+                    if (state.resumed != index && target > 5000 && mp.isSeekable) {
+                        // Appeler LibVLC depuis son propre thread d'événements risque un blocage :
+                        // le repositionnement se fait depuis le thread principal.
+                        scope.launch {
+                            mp.setTime(target)
+                            showOsd("Reprise à ${fmt(target)}")
+                        }
                     }
+                    state.resumeAt = -1
                     state.resumed = index
                     if (tv && SettingsStore.matchFrameRate && activity != null) scope.launch {
                         delay(800)
@@ -320,8 +350,13 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                     }
                 }
                 MediaPlayer.Event.Paused -> playing = false
-                MediaPlayer.Event.Buffering -> buffering = ev.buffering < 100f
-                MediaPlayer.Event.TimeChanged -> { time = ev.timeChanged; if (time > 0) buffering = false }
+                MediaPlayer.Event.Buffering -> { bufferPct = ev.buffering.toInt(); buffering = ev.buffering < 100f }
+                MediaPlayer.Event.TimeChanged -> {
+                    time = ev.timeChanged
+                    if (time > 0) buffering = false
+                    // Compteur de relances remis à zéro seulement après 30 s de lecture réellement stable.
+                    if (state.stallRetries > 0 && time - state.stallBase > 30_000) state.stallRetries = 0
+                }
                 MediaPlayer.Event.LengthChanged -> length = ev.lengthChanged
                 MediaPlayer.Event.EndReached -> scope.launch { onEnd() }
                 MediaPlayer.Event.EncounteredError -> {
@@ -349,10 +384,15 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
             }
             report()
             mp.setEventListener(null)
-            mp.stop()
             mp.detachViews()
-            mp.release()
-            state.pfd?.close()
+            // stop() / release() peuvent bloquer : hors du thread principal pour ne pas figer l'interface.
+            val pfd = state.pfd
+            Vlc.worker.execute {
+                runCatching { mp.stop() }
+                runCatching { mp.release() }
+                runCatching { pfd?.close() }
+            }
+            state.pfd = null
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             activity?.let { resetDisplayMode(it) }
         }
@@ -362,6 +402,30 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
     LaunchedEffect(vm.pauseSignal) { if (vm.pauseSignal != startPause && mp.isPlaying) mp.pause() }
     // Petite fenêtre (PiP) : aucun contrôle par-dessus la vidéo.
     LaunchedEffect(inPip) { if (inPip) { controls = false; trackMenu = null } }
+
+    // Chargement bloqué : si ni le tampon ni la lecture n'avancent pendant 15 s, on rouvre le flux à la
+    // position actuelle plutôt que d'attendre indéfiniment. Nombre d'essais limité, puis message d'erreur.
+    LaunchedEffect(buffering, bufferPct, attempt) {
+        if (!buffering || error != null) return@LaunchedEffect
+        delay(15_000)
+        if (!buffering || error != null) return@LaunchedEffect
+        if (state.stallRetries < 3) {
+            state.stallRetries++
+            val at = when {
+                req.isLive -> -1L
+                time > 0 -> time
+                state.stallBase > 0 -> state.stallBase
+                else -> -1L
+            }
+            state.stallBase = maxOf(at, 0L)
+            playAt(index, resumeAt = at)
+            showOsd("Reconnexion…", 2500)
+        } else {
+            buffering = false
+            error = "Le flux ne répond plus. Vérifie la connexion ou réessaie."
+            controls = true
+        }
+    }
 
     // Sauvegarde régulière de la position (reprise)
     LaunchedEffect(Unit) { while (true) { delay(15_000); report() } }
@@ -462,7 +526,7 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                 Text("Lecture impossible", color = C.Text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 Text(msg, color = Color(0xFFAEAEB2), fontSize = 15.sp, modifier = Modifier.padding(vertical = 14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PillButton("Réessayer", { state.liveRetries = 0; playAt(index) }, Modifier.focusRequester(playFocus), primary = true)
+                    PillButton("Réessayer", { state.liveRetries = 0; state.stallRetries = 0; playAt(index, resumeAt = if (req.isLive || time <= 0) -1L else time) }, Modifier.focusRequester(playFocus), primary = true)
                     PillButton("Fermer", onClose)
                 }
             }
