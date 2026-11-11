@@ -272,18 +272,20 @@ fun LoginScreen(vm: AppViewModel) {
         }
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF1A1A24), C.Bg), radius = 1400f)), contentAlignment = Alignment.Center) {
-        if (maxWidth >= 900.dp) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                brand()
-                Spacer(Modifier.width(72.dp))
-                Box(Modifier.width(460.dp)) { form() }
-            }
-        } else {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 24.dp, vertical = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-            ) {
+    // Le contenu défile et se redimensionne au-dessus du clavier visuel (mode large ou étroit) :
+    // le champ en cours de saisie n'est jamais masqué.
+    BoxWithConstraints(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF1A1A24), C.Bg), radius = 1400f))) {
+        Column(
+            Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+        ) {
+            if (maxWidth >= 900.dp) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    brand()
+                    Spacer(Modifier.width(72.dp))
+                    Box(Modifier.width(460.dp)) { form() }
+                }
+            } else {
                 brand()
                 Spacer(Modifier.height(32.dp))
                 form()
