@@ -275,11 +275,12 @@ fun LoginScreen(vm: AppViewModel) {
     // Le contenu défile et se redimensionne au-dessus du clavier visuel (mode large ou étroit) :
     // le champ en cours de saisie n'est jamais masqué.
     BoxWithConstraints(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF1A1A24), C.Bg), radius = 1400f))) {
+        val wide = maxWidth >= 900.dp
         Column(
             Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
         ) {
-            if (maxWidth >= 900.dp) {
+            if (wide) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     brand()
                     Spacer(Modifier.width(72.dp))
