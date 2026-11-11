@@ -108,6 +108,15 @@ object ProfileStore {
     @Synchronized
     fun historySnapshot(): List<HistoryEntry> = profile.history.toList()
 
+    /** Copie complète du profil, pour les calculs faits hors du fil principal (suggestions, rangées de l'accueil). */
+    @Synchronized
+    fun snapshot(): UserProfile = UserProfile(
+        profile.history.toMutableList(), profile.watched.toMutableSet(), profile.likes.toMutableSet(),
+        profile.dislikes.toMutableSet(), profile.favorites.toMutableSet(), profile.hideWatched,
+    )
+
+    fun isFavorite(item: MediaItem, p: UserProfile): Boolean = item.key in p.favorites || item.variants.any { "${it.kind}:${it.id}" in p.favorites }
+
     fun episodeKey(episodeId: String) = "Ep:$episodeId"
 
     fun isWatched(key: String) = key in profile.watched

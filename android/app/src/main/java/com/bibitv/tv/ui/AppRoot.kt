@@ -106,7 +106,7 @@ fun AppRoot(vm: AppViewModel) {
             else Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
             Box(safe) {
                 when {
-                    req != null -> PlayerScreen(req, vm, onClose = { vm.player = null })
+                    req != null -> PlayerScreen(req, vm, onClose = { vm.closePlayer() })
                     vm.updatePrompt -> UpdatePromptScreen(vm)
                     // Chargement initial (mise à jour, connexion, playlist) : logo + citations de films
                     vm.busy != null && vm.home == null -> LoadingScreen(vm.busy!!)
@@ -216,8 +216,9 @@ fun SplashScreen(onDone: () -> Unit) {
             }
 
             Image(painterResource(R.drawable.splash_text), null, contentScale = ContentScale.FillBounds,
-                modifier = Modifier.offset((560 * scale).dp, ((540 + 16 * (1 - word.value)) * scale).dp).size((530 * scale).dp, (180 * scale).dp)
-                    .graphicsLayer { alpha = word.value })
+                // Décalage lu dans graphicsLayer : l'animation ne recompose plus l'écran à chaque image.
+                modifier = Modifier.offset((560 * scale).dp, (540 * scale).dp).size((530 * scale).dp, (180 * scale).dp)
+                    .graphicsLayer { alpha = word.value; translationY = 16 * (1 - word.value) * scale * density })
             Image(painterResource(R.drawable.splash_floor), null, contentScale = ContentScale.FillBounds,
                 modifier = Modifier.offset((560 * scale).dp, (738 * scale).dp).size((540 * scale).dp, (203 * scale).dp)
                     .graphicsLayer { alpha = floor.value })

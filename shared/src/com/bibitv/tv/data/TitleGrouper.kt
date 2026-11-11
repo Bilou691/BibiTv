@@ -8,7 +8,8 @@ import java.text.Normalizer
  */
 object TitleGrouper {
 
-    private val yearRegex = Regex("""^(?<base>.+?)\s*[(\[](?<year>(19|20)\d{2})[)\]]\s*(?<rest>.*)$""")
+    // Groupes numérotés : les groupes nommés (m.groups["…"]) plantent sur Android < 8.0 (API 26).
+    private val yearRegex = Regex("""^(.+?)\s*[(\[]((19|20)\d{2})[)\]]\s*(.*)$""")
     private val prefixRegex = Regex("""^\s*(\[[A-Z]{2,5}]|[A-Z]{2,5}\s*[|:\-–])\s*""")
 
     private val tags = setOf(
@@ -24,9 +25,9 @@ object TitleGrouper {
         var year: String? = null
         var rest = ""
         yearRegex.find(t)?.let { m ->
-            t = m.groups["base"]!!.value.trim()
-            year = m.groups["year"]!!.value
-            rest = m.groups["rest"]!!.value
+            t = m.groupValues[1].trim()
+            year = m.groupValues[2]
+            rest = m.groupValues[4]
         }
         val tokens = t.split(' ').filter { it.isNotEmpty() }.toMutableList()
         val trailing = mutableListOf<String>()
@@ -96,7 +97,7 @@ object TitleGrouper {
             val img = e.item.imageUrl
             if (img != null && (imageUse[img] ?: 0) <= 6) {
                 val other = byImage[img]
-                if (other != null && sameYear(other, key)) union(other, key) else byImage.putIfAbsent(img, key)
+                if (other != null && sameYear(other, key)) union(other, key) else if (other == null) byImage[img] = key
             }
         }
 

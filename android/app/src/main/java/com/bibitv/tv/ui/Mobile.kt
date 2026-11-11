@@ -329,7 +329,7 @@ fun MobileDetailScreen(item: MediaItem, vm: AppViewModel) {
     val movie = vm.movieInfo
     val series = vm.seriesInfo
     val labels = remember(item) { vm.versionLabels(item) }
-    var season by remember(series) { mutableIntStateOf(0) }
+    var season by remember(series) { mutableIntStateOf(vm.detailSeason) }
 
     val year = vm.yearText(movie?.releaseDate ?: series?.releaseDate) ?: item.year
     val meta = listOfNotNull(

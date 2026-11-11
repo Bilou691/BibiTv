@@ -50,6 +50,19 @@ data class PlayerRequest(val playlist: List<PlaylistEntry>, val index: Int, val 
 
 data class MenuRequest(val title: String, val actions: List<Pair<String, () -> Unit>>)
 
+/** Rangées de l'accueil qui dépendent du profil (goûts, favoris, vus) : calculées hors du fil principal. */
+data class HomeRows(
+    val revision: Int,
+    val forMovies: List<MediaItem>,
+    val tastesMovies: List<String>,
+    val forSeries: List<MediaItem>,
+    val tastesSeries: List<String>,
+    val myList: List<MediaItem>,
+    val favChannels: List<MediaItem>,
+    val recentMovies: List<MediaItem>,
+    val recentSeries: List<MediaItem>,
+)
+
 data class HomeData(
     val hero: MediaItem?,
     val topMovies: List<RankedItem>,
@@ -72,6 +85,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var tab by mutableStateOf(Tab.Home)
 
     val items = mutableStateMapOf<Section, List<MediaItem>>()
+    /** Films / séries triés par date d'ajout (« Récemment ajoutés »), calculé une fois au chargement. */
+    private val byAdded = HashMap<Section, List<MediaItem>>()
     val categories = mutableStateMapOf<Section, List<Category>>()
     val loadErrors = mutableStateMapOf<Section, String>()
     private val byKey = HashMap<String, MediaItem>()
@@ -111,11 +126,55 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Accueil ----------
     var home by mutableStateOf<HomeData?>(null)
     var heroInfo by mutableStateOf<MovieInfo?>(null)
+    var homeRows by mutableStateOf<HomeRows?>(null)
+        private set
+    private var rowsJob: Job? = null
+
+    /**
+     * Recalcule les rangées « Pour toi », « Ma liste », « Favoris », « Nouveaux… ». Avant, ces tris et
+     * filtres sur tout le catalogue (jusqu'à 100 000 titres) se faisaient dans la composition, sur le
+     * fil principal, à chaque changement du profil (un favori ajouté, un film marqué vu) : l'accueil
+     * se figeait un instant sur les box modestes.
+     */
+    fun refreshHomeRows(revision: Int) {
+        if (homeRows?.revision == revision && rowsJob?.isActive != true) return
+        rowsJob?.cancel()
+        val movies = items[Section.Movies] ?: emptyList()
+        val series = items[Section.Series] ?: emptyList()
+        val live = items[Section.Live] ?: emptyList()
+        val movieCats = categoryNames(Section.Movies)
+        val seriesCats = categoryNames(Section.Series)
+        rowsJob = viewModelScope.launch {
+            val rows = withContext(Dispatchers.Default) {
+                val p = ProfileStore.snapshot()
+                fun recent(list: List<MediaItem>) = list.asSequence().filter { !p.hideWatched || it.key !in p.watched }
+                    .sortedByDescending { it.added }.take(24).toList()
+                HomeRows(
+                    revision,
+                    Recommendations.suggest(movies, p = p), Recommendations.topTastes(movies, movieCats, p = p),
+                    Recommendations.suggest(series, p = p), Recommendations.topTastes(series, seriesCats, p = p),
+                    (movies + series).filter { ProfileStore.isFavorite(it, p) },
+                    live.filter { ProfileStore.isFavorite(it, p) },
+                    recent(movies), recent(series),
+                )
+            }
+            homeRows = rows
+        }
+    }
+
+    /** Bouton « Lecture » du titre à la une : premier élément focalisé au démarrage. */
+    val heroFocus = androidx.compose.ui.focus.FocusRequester()
+    var homeFocused = false
 
     // ---------- Fiche détail ----------
     var variant by mutableStateOf<MediaItem?>(null)
     var movieInfo by mutableStateOf<MovieInfo?>(null)
     var seriesInfo by mutableStateOf<SeriesInfo?>(null)
+    /** Saison affichée sur la fiche : celle du dernier épisode regardé, conservée au retour du lecteur. */
+    var detailSeason by mutableStateOf(0)
+    /** Défilement de la fiche, conservé au retour du lecteur (l'épisode quitté est encore visible et reprend le focus). */
+    var detailListState = androidx.compose.foundation.lazy.LazyListState()
+        private set
     var detailLoading by mutableStateOf(false)
     var detailError by mutableStateOf<String?>(null)
     private var detailJob: Job? = null
@@ -139,7 +198,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var lastCrash by mutableStateOf<String?>(null)
     private var started = false
 
-    /** Démarrage : recherche de mise à jour d'abord, puis connexion et chargement de la playlist. */
+    /**
+     * Démarrage : la connexion et le chargement de la playlist partent tout de suite ; la recherche de
+     * mise à jour tourne en parallèle (elle n'ajoute plus son délai, jusqu'à 8 s, avant l'accueil).
+     * Si une mise à jour existe, elle est proposée par-dessus, avant d'entrer dans l'app.
+     */
     fun startup() {
         if (started) return
         started = true
@@ -149,25 +212,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             crashFile.delete()
             updateMessage = "BibiTV s'est fermé de façon inattendue la dernière fois (détails dans Réglages)."
         }
+        if (!autoLogin()) busy = null
         viewModelScope.launch {
-            busy = "Recherche de mise à jour…"
             update = kotlinx.coroutines.withTimeoutOrNull(8000) { runCatching { UpdateManager.check() }.getOrNull() }
-            busy = null
-            if (update != null) updatePrompt = true else autoLogin()
+            if (update != null) updatePrompt = true
         }
     }
 
     fun skipUpdate() {
         updatePrompt = false
-        autoLogin()
+        if (client == null && busy == null) autoLogin()
     }
 
     // =================== Connexion ===================
 
-    fun autoLogin() {
+    /** Connexion avec les identifiants enregistrés ; faux s'il n'y en a pas. */
+    fun autoLogin(): Boolean {
         val pwd = SettingsStore.password
-        if (SettingsStore.serverUrl.isNotBlank() && SettingsStore.username.isNotBlank() && pwd != null)
-            login(SettingsStore.serverUrl, SettingsStore.username, pwd)
+        if (SettingsStore.serverUrl.isBlank() || SettingsStore.username.isBlank() || pwd == null) return false
+        login(SettingsStore.serverUrl, SettingsStore.username, pwd)
+        return true
     }
 
     fun login(url: String, user: String, pwd: String) {
@@ -200,8 +264,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         player = null
         detail = null
         client = null
-        items.clear(); categories.clear(); byKey.clear(); loadErrors.clear()
+        items.clear(); categories.clear(); byKey.clear(); byAdded.clear(); loadErrors.clear()
         home = null
+        homeRows = null
         SettingsStore.password = null
         showSettings = false
     }
@@ -225,9 +290,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val c = client ?: return false
         val job = loading[section]?.takeIf { it.isActive } ?: viewModelScope.async {
             try {
-                val (catList, grouped) = fetchSection(c, section)
+                val fetched = fetchSection(c, section)
                 if (c != client) return@async false
-                commitSection(section, catList, grouped)
+                commitSection(section, fetched)
                 true
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -245,7 +310,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Télécharge et regroupe une section, sans toucher à ce qui est affiché. */
-    private suspend fun fetchSection(c: XtreamClient, section: Section): Pair<List<Category>, List<MediaItem>> {
+    private class Fetched(val categories: List<Category>, val items: List<MediaItem>, val byAdded: List<MediaItem>)
+
+    private suspend fun fetchSection(c: XtreamClient, section: Section): Fetched {
         val cats = viewModelScope.async { c.categories(section) }
         val list = viewModelScope.async { c.items(section) }
         val catList = cats.await()
@@ -259,13 +326,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (section == Section.Live) ChannelBrands.tag(g)
             g
         }
-        return catList to grouped
+        val sorted = if (section == Section.Live) grouped else withContext(Dispatchers.Default) { grouped.sortedByDescending { it.added } }
+        return Fetched(catList, grouped, sorted)
     }
 
-    private fun commitSection(section: Section, catList: List<Category>, grouped: List<MediaItem>) {
+    private fun commitSection(section: Section, f: Fetched) {
+        val catList = f.categories
+        val grouped = f.items
         byKey.values.removeAll { it.kind == section }
         grouped.forEach { byKey[it.key] = it }
         categories[section] = catList
+        byAdded[section] = f.byAdded
         items[section] = grouped
         if (section == Section.Live) ProfileStore.seedLiveFavorites(grouped)
         loadErrors.remove(section)
@@ -314,7 +385,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val nq = TitleGrouper.normalize(q)
                 all.filter { TitleGrouper.normalize(it.title).contains(nq) }
             }
-            categoryId == Category.ALL_ID -> if (section == Section.Live) all else all.sortedByDescending { it.added }
+            categoryId == Category.ALL_ID -> if (section == Section.Live) all else byAdded[section] ?: all.sortedByDescending { it.added }
             categoryId == Category.FAVORITES_ID -> all.filter { ProfileStore.isFavorite(it) }
             else -> all.filter { categoryId in it.categoryIds }
         }
@@ -385,9 +456,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 for (s in listOf(Section.Movies, Section.Series, Section.Live)) {
                     try {
-                        val (cats, grouped) = fetchSection(c, s)
+                        val fetched = fetchSection(c, s)
                         if (c != client) return@launch
-                        commitSection(s, cats, grouped)
+                        commitSection(s, fetched)
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: OutOfMemoryError) {
@@ -467,6 +538,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun playSeries(series: MediaItem, seriesVariantId: String, info: SeriesInfo, episode: Episode) {
         val c = client ?: return
+        if (info == seriesInfo) detailSeason = info.seasons.indexOfFirst { it.number == episode.season }.coerceAtLeast(0)
         val previous = ProfileStore.profile.history.firstOrNull { it.key == series.key }
         val all = info.seasons.flatMap { it.episodes }
         val playlist = all.map { ep ->
@@ -578,6 +650,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // =================== Fiche détail ===================
 
     fun showDetail(item: MediaItem) {
+        detailListState = androidx.compose.foundation.lazy.LazyListState()
         detail = item
         selectVariant(item.variants.firstOrNull() ?: item)
     }
@@ -588,6 +661,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         variant = null
         movieInfo = null
         seriesInfo = null
+        // La tuile qui avait ouvert la fiche reprend le focus.
+        FocusMemory.restore()
+    }
+
+    /** Fermeture du lecteur : l'élément qui l'avait lancé (affiche, chaîne, épisode) reprend le focus. */
+    fun closePlayer() {
+        player = null
+        FocusMemory.restore()
     }
 
     fun versionLabels(item: MediaItem): List<String> {
@@ -613,7 +694,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         detailJob = viewModelScope.launch {
             try {
                 if (v.kind == Section.Movies) movieInfo = c.movieInfo(v.id)
-                else seriesInfo = c.seriesInfo(v.id)
+                else {
+                    val info = c.seriesInfo(v.id)
+                    val h = detail?.let { d -> ProfileStore.profile.history.firstOrNull { it.key == d.key } }
+                    detailSeason = info.seasons.indexOfFirst { s -> s.episodes.any { it.id == h?.episodeId } }.coerceAtLeast(0)
+                    seriesInfo = info
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {

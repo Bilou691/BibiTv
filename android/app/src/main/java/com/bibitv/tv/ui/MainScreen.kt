@@ -41,6 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -57,14 +60,20 @@ import com.bibitv.tv.data.DownloadManager
 import com.bibitv.tv.data.EpgEntry
 import com.bibitv.tv.data.MediaItem
 import com.bibitv.tv.data.ProfileStore
-import com.bibitv.tv.data.Recommendations
 import com.bibitv.tv.data.Section
 
 @Composable
 fun MainScreen(vm: AppViewModel) {
-    // Retour depuis un onglet → Accueil ; depuis l'Accueil → quitter (comportement système)
+    // Retour depuis un onglet → Accueil ; depuis l'Accueil déroulé → remonter en haut ; en haut → quitter (comportement système)
     BackHandler(enabled = vm.tab != Tab.Home && vm.detail == null && vm.player == null) { vm.tab = Tab.Home }
+    val scope = rememberCoroutineScope()
+    val scrolled by remember { androidx.compose.runtime.derivedStateOf { vm.homeState.firstVisibleItemIndex > 0 || vm.homeState.firstVisibleItemScrollOffset > 0 } }
+    BackHandler(enabled = vm.tab == Tab.Home && scrolled && vm.detail == null && vm.player == null) {
+        scope.launch { vm.homeState.animateScrollToItem(0); vm.heroFocus.requestWhenReady() }
+    }
 
+    // La carte « programme TV » d'une chaîne survolée ne suit pas d'un onglet à l'autre.
+    LaunchedEffect(vm.tab) { vm.clearEpg() }
     Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF15151C), C.Bg), endY = 900f))) {
         TopBar(vm)
         Box(Modifier.fillMaxSize()) {
@@ -82,13 +91,20 @@ fun MainScreen(vm: AppViewModel) {
 
 @Composable
 private fun TopBar(vm: AppViewModel) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+    // En remontant d'une grille, le focus arrive sur l'onglet courant : un voisin changerait d'onglet,
+    // et « Téléchargements » / « Réglages » ne sont atteints que par → une fois dans la barre.
+    val current = remember { FocusRequester() }
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 18.dp).focusProperties { enter = { current } }.focusGroup(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Image(painterResource(R.drawable.logo), null, modifier = Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)))
         Text("BibiTV", color = C.Text, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
         Spacer(Modifier.weight(1f))
         Row(Modifier.clip(RoundedCornerShape(26.dp)).background(Color(0xB31C1C1E)).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Tab.entries.forEach { t ->
-                PillButton(t.label, { vm.tab = t }, selected = vm.tab == t, onFocus = { vm.focusTab(t) })
+                PillButton(t.label, { vm.tab = t }, if (vm.tab == t) Modifier.focusRequester(current) else Modifier, selected = vm.tab == t, onFocus = { vm.focusTab(t) })
             }
         }
         Spacer(Modifier.weight(1f))
@@ -108,37 +124,43 @@ internal fun HomeScreen(vm: AppViewModel) {
     val rev = ProfileStore.revision.intValue
     val movies = vm.items[Section.Movies] ?: emptyList()
     val series = vm.items[Section.Series] ?: emptyList()
-    val hide = ProfileStore.profile.hideWatched
     val history = remember(rev) { ProfileStore.profile.history.toList() }
-    val forMovies = remember(rev, movies) { Recommendations.suggest(movies) }
-    val forSeries = remember(rev, series) { Recommendations.suggest(series) }
-    val myList = remember(rev, movies, series) { (movies + series).filter { ProfileStore.isFavorite(it) } }
-    val recentMovies = remember(rev, movies) { movies.filter { !hide || !ProfileStore.isWatched(it.key) }.sortedByDescending { it.added }.take(24) }
-    val recentSeries = remember(rev, series) { series.filter { !hide || !ProfileStore.isWatched(it.key) }.sortedByDescending { it.added }.take(24) }
+    // Rangées dépendant du profil : calculées hors du fil principal, les précédentes restent affichées entre-temps.
+    LaunchedEffect(rev, movies, series) { vm.refreshHomeRows(rev) }
+    val rows = vm.homeRows
+    val forMovies = rows?.forMovies ?: emptyList()
+    val forSeries = rows?.forSeries ?: emptyList()
+    val myList = rows?.myList ?: emptyList()
+    val recentMovies = rows?.recentMovies ?: emptyList()
+    val recentSeries = rows?.recentSeries ?: emptyList()
     val live = vm.items[Section.Live] ?: emptyList()
     val topChannelItems = home.topChannels.map { it.item }
     val gutter = LocalDims.current.gutter
+    val noEpg: () -> Unit = { vm.clearEpg() }
+    // Premier affichage : le focus se pose sur « Lecture » du titre à la une (sinon la 1re touche est perdue).
+    val compact = LocalDims.current.compact
+    LaunchedEffect(home.hero) { if (home.hero != null && !vm.homeFocused && !compact) { if (vm.heroFocus.requestWhenReady()) vm.homeFocused = true } }
 
     LazyColumn(state = vm.homeState, contentPadding = PaddingValues(bottom = 60.dp)) {
         item { Hero(vm, home.hero) }
         item {
             val vod = history.filter { it.kind != Section.Live }.take(20)
             ShelfRow("Reprendre", "Films et séries regardés récemment", vod, key = { it.key }) { h ->
-                HistoryCard(h, { vm.resume(h, vod) }, { vm.historyMenu(h) })
+                HistoryCard(h, { vm.resume(h, vod) }, { vm.historyMenu(h) }, noEpg)
             }
         }
         item {
             ShelfRow("Top 10 des films de la semaine",
                 if (home.moviesFromTmdb) "Tendances de la semaine (TMDB), disponibles dans votre catalogue" else "Nouveautés de la semaine les mieux notées",
-                home.topMovies, key = { it.item.key }) { r -> RankedPoster(r, { vm.open(r.item) }, { vm.itemMenu(r.item) }) }
+                home.topMovies, key = { it.item.key }) { r -> RankedPoster(r, { vm.open(r.item) }, { vm.itemMenu(r.item) }, noEpg) }
         }
         item {
             ShelfRow("Top 10 des séries de la semaine",
                 if (home.seriesFromTmdb) "Tendances de la semaine (TMDB), disponibles dans votre catalogue" else "Nouveautés de la semaine les mieux notées",
-                home.topSeries, key = { it.item.key }) { r -> RankedPoster(r, { vm.open(r.item) }, { vm.itemMenu(r.item) }) }
+                home.topSeries, key = { it.item.key }) { r -> RankedPoster(r, { vm.open(r.item) }, { vm.itemMenu(r.item) }, noEpg) }
         }
         item {
-            if (forMovies.isEmpty() && forSeries.isEmpty()) {
+            if (rows != null && forMovies.isEmpty() && forSeries.isEmpty()) {
                 Row(
                     Modifier.padding(start = gutter, end = gutter, top = 30.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
                         .background(Brush.linearGradient(listOf(Color(0x330A84FF), Color(0x33BF5AF2)))).padding(26.dp),
@@ -154,23 +176,23 @@ internal fun HomeScreen(vm: AppViewModel) {
             }
         }
         item {
-            val tastes = Recommendations.topTastes(movies, vm.categoryNames(Section.Movies))
+            val tastes = rows?.tastesMovies ?: emptyList()
             ShelfRow("Pour toi · Films", if (tastes.isEmpty()) "D'après vos goûts" else "Parce que vous aimez : ${tastes.joinToString(", ")}",
                 forMovies, key = { it.key }, action = { PillButton("Personnaliser", { vm.showPersonalize = true }) }) { m ->
-                PosterCard(m, { vm.open(m) }, { vm.itemMenu(m) })
+                PosterCard(m, { vm.open(m) }, { vm.itemMenu(m) }, noEpg)
             }
         }
         item {
-            val tastes = Recommendations.topTastes(series, vm.categoryNames(Section.Series))
+            val tastes = rows?.tastesSeries ?: emptyList()
             ShelfRow("Pour toi · Séries", if (tastes.isEmpty()) "D'après vos goûts" else "Parce que vous aimez : ${tastes.joinToString(", ")}",
                 forSeries, key = { it.key }, action = { PillButton("Personnaliser", { vm.showPersonalize = true }) }) { m ->
-                PosterCard(m, { vm.open(m) }, { vm.itemMenu(m) })
+                PosterCard(m, { vm.open(m) }, { vm.itemMenu(m) }, noEpg)
             }
         }
         item {
-            val favChans = live.filter { ProfileStore.isFavorite(it) }
+            val favChans = rows?.favChannels ?: emptyList()
             ShelfRow("Favoris", "Tes chaînes préférées (appui long sur une chaîne pour en ajouter)", favChans, key = { it.key }) { ch ->
-                ChannelCard(ch.title, ch.imageUrl, { vm.playChannel(ch, favChans) }, { vm.itemMenu(ch) }, onFocus = { vm.focusChannel(ch) })
+                ChannelCard(ch.title, ch.imageUrl, { vm.playChannel(ch, favChans) }, { vm.itemMenu(ch) }, onFocus = { vm.focusChannel(ch) }, focusKey = "fav:" + ch.key)
             }
         }
         item {
@@ -183,22 +205,22 @@ internal fun HomeScreen(vm: AppViewModel) {
             val chans = history.filter { it.kind == Section.Live }.take(15)
             ShelfRow("Chaînes regardées récemment", "Pour zapper rapidement", chans) { h ->
                 val ch = live.firstOrNull { it.id == h.itemId }
-                ChannelCard(h.title, h.imageUrl, { vm.resume(h, chans) }, { vm.historyMenu(h) }, onFocus = { ch?.let { vm.focusChannel(it) } })
+                ChannelCard(h.title, h.imageUrl, { vm.resume(h, chans) }, { vm.historyMenu(h) }, onFocus = { ch?.let { vm.focusChannel(it) } }, focusKey = "recent:" + h.key)
             }
         }
         item {
             ShelfRow("Ma liste", if (myList.size == 1) "1 titre" else "${myList.size} titres", myList, key = { it.key }) { m ->
-                PosterCard(m, { vm.open(m) }, { vm.itemMenu(m) })
+                PosterCard(m, { vm.open(m) }, { vm.itemMenu(m) }, noEpg)
             }
         }
         item {
             ShelfRow("Nouveaux films", "Derniers ajouts au catalogue", recentMovies, key = { it.key }) { m ->
-                PosterCard(m, { vm.open(m) }, { vm.itemMenu(m) })
+                PosterCard(m, { vm.open(m) }, { vm.itemMenu(m) }, noEpg)
             }
         }
         item {
             ShelfRow("Nouvelles séries", "Dernières séries ajoutées ou mises à jour", recentSeries, key = { it.key }) { m ->
-                PosterCard(m, { vm.open(m) }, { vm.itemMenu(m) })
+                PosterCard(m, { vm.open(m) }, { vm.itemMenu(m) }, noEpg)
             }
         }
         if (home.errors.isNotEmpty()) item {
@@ -213,6 +235,7 @@ private fun Hero(vm: AppViewModel, item: MediaItem?) {
     item ?: return
     if (LocalDims.current.compact) return CompactHero(vm, item)
     val info = vm.heroInfo
+    val noEpg: () -> Unit = { vm.clearEpg() }
     Box(Modifier.padding(horizontal = LocalDims.current.gutter).fillMaxWidth().height(380.dp).clip(RoundedCornerShape(24.dp)).background(C.Surface)) {
         AsyncImage(model = info?.backdrop ?: item.imageUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color(0xF00A0A0C), 0.45f to Color(0x990A0A0C), 0.85f to Color.Transparent)))
@@ -229,8 +252,8 @@ private fun Hero(vm: AppViewModel, item: MediaItem?) {
                 PillButton("▶  Lecture", {
                     val v = item.variants.firstOrNull() ?: item
                     vm.playMovie(item, v, v.extension, v.tag)
-                }, primary = true)
-                PillButton("Plus d'infos", { vm.open(item) })
+                }, Modifier.focusRequester(vm.heroFocus), primary = true, onFocus = noEpg)
+                PillButton("Plus d'infos", { vm.open(item) }, onFocus = noEpg)
             }
         }
     }
@@ -303,13 +326,22 @@ internal fun CatalogScreen(vm: AppViewModel, section: Section) {
 
     Row(Modifier.fillMaxSize()) {
         // Catégories (et marques pour la TV) : la sélection suit le focus, comme sur Apple TV.
-        LazyColumn(Modifier.width(290.dp).fillMaxHeight(), contentPadding = PaddingValues(start = 36.dp, end = 12.dp, bottom = 40.dp)) {
+        // En revenant de la grille (←), le focus se pose sur la catégorie affichée, pas sur la voisine
+        // la plus proche (ce qui changeait la catégorie et rechargeait la grille).
+        val selectedReq = remember { FocusRequester() }
+        var selectedShown by remember { mutableStateOf(false) }
+        @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+        LazyColumn(
+            Modifier.width(290.dp).fillMaxHeight().focusProperties { enter = { if (selectedShown) selectedReq else FocusRequester.Default } }.focusGroup(),
+            contentPadding = PaddingValues(start = 36.dp, end = 12.dp, bottom = 40.dp),
+        ) {
             items(cats, key = { it.id }) { c ->
                 if (c.isHeader) {
                     Text(c.name, color = C.Text3, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 14.dp, top = 16.dp, bottom = 4.dp))
                 } else {
                     val selected = c.id == category
-                    Focusable({ select(c.id) }, Modifier.fillMaxWidth().padding(vertical = 2.dp), onFocus = { pending = c.id },
+                    if (selected) androidx.compose.runtime.DisposableEffect(Unit) { selectedShown = true; onDispose { selectedShown = false } }
+                    Focusable({ select(c.id) }, (if (selected) Modifier.focusRequester(selectedReq) else Modifier).fillMaxWidth().padding(vertical = 2.dp), onFocus = { pending = c.id },
                         shape = RoundedCornerShape(10.dp), focusedScale = 1.03f, borderWidth = 0.dp) { f ->
                         Row(
                             Modifier.fillMaxWidth().background(if (f) Color.White else if (selected) C.Surface2 else Color.Transparent)
@@ -359,7 +391,7 @@ internal fun CatalogScreen(vm: AppViewModel, section: Section) {
                 LazyVerticalGrid(GridCells.Adaptive(210.dp), state = gridState, contentPadding = PaddingValues(start = 16.dp, end = 40.dp, top = 12.dp, bottom = 160.dp),
                     horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
                     items(list) { ch ->
-                        ChannelCard(ch.title, ch.imageUrl, { vm.playChannel(ch, list) }, { vm.itemMenu(ch) }, onFocus = { vm.focusChannel(ch) }, width = 210.dp)
+                        ChannelCard(ch.title, ch.imageUrl, { vm.playChannel(ch, list) }, { vm.itemMenu(ch) }, onFocus = { vm.focusChannel(ch) }, width = 210.dp, focusKey = ch.key)
                     }
                 }
             } else {

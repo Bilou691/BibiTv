@@ -17,6 +17,8 @@ import com.bibitv.tv.R
  * - chaîne « BibiTV » (Top 10 de la semaine, Pour toi) sur l'accueil Android TV.
  * Chaque élément ouvre BibiTV via un lien direct (bibitv://…).
  */
+// RestrictedApi : lint se trompe sur les constructeurs de tvprovider, c'est l'usage documenté par Google.
+@android.annotation.SuppressLint("RestrictedApi")
 object TvHome {
     const val SCHEME = "bibitv"
 

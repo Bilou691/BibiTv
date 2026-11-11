@@ -45,6 +45,10 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
 
+      # Lint : détecte les appels indisponibles sur les vieilles box (minSdk 23) et les erreurs classiques.
+      - name: Lint
+        run: ./gradlew lintRelease --no-daemon
+
       - name: Préparer les fichiers
         id: v
         run: |

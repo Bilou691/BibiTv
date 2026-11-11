@@ -90,7 +90,7 @@ object TopService {
         val byTmdb = HashMap<String, MediaItem>()
         val byTitle = HashMap<String, MutableList<MediaItem>>()
         for (item in catalog) {
-            item.tmdbId?.let { byTmdb.putIfAbsent(it, item) }
+            item.tmdbId?.let { if (it !in byTmdb) byTmdb[it] = item } // putIfAbsent : API 24, l'app accepte Android 6
             byTitle.getOrPut(compact(item.title)) { mutableListOf() }.add(item)
         }
         val out = mutableListOf<MediaItem>()
@@ -130,8 +130,7 @@ object Recommendations {
         return f
     }
 
-    fun weights(catalog: List<MediaItem>): Map<String, Double> {
-        val p = ProfileStore.profile
+    fun weights(catalog: List<MediaItem>, p: UserProfile = ProfileStore.profile): Map<String, Double> {
         val history = p.history.map { it.key }.toSet()
         val w = HashMap<String, Double>()
         for (item in catalog) {
@@ -147,10 +146,9 @@ object Recommendations {
         return w
     }
 
-    fun suggest(catalog: List<MediaItem>, count: Int = 24): List<MediaItem> {
-        val w = weights(catalog)
+    fun suggest(catalog: List<MediaItem>, count: Int = 24, p: UserProfile = ProfileStore.profile): List<MediaItem> {
+        val w = weights(catalog, p)
         if (w.values.none { it > 0 }) return emptyList()
-        val p = ProfileStore.profile
         val history = p.history.map { it.key }.toSet()
         return catalog.asSequence()
             .filter { it.imageUrl != null && it.key !in p.likes && it.key !in p.dislikes && it.key !in p.watched && it.key !in history }
@@ -167,8 +165,8 @@ object Recommendations {
             .toList()
     }
 
-    fun topTastes(catalog: List<MediaItem>, categoryNames: Map<String, String>, count: Int = 3): List<String> =
-        weights(catalog).filter { it.value > 0 }.entries.sortedByDescending { it.value }
+    fun topTastes(catalog: List<MediaItem>, categoryNames: Map<String, String>, count: Int = 3, p: UserProfile = ProfileStore.profile): List<String> =
+        weights(catalog, p).filter { it.value > 0 }.entries.sortedByDescending { it.value }
             .mapNotNull { (k, _) -> if (k.startsWith("c:")) categoryNames[k.substring(2)] else k.substring(2).replaceFirstChar { it.uppercase() } }
             .map { cleanName(it) }
             .distinctBy { it.lowercase() }

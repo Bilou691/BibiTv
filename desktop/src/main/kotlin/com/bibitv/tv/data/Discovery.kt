@@ -89,7 +89,7 @@ object TopService {
         val byTmdb = HashMap<String, MediaItem>()
         val byTitle = HashMap<String, MutableList<MediaItem>>()
         for (item in catalog) {
-            item.tmdbId?.let { byTmdb.putIfAbsent(it, item) }
+            item.tmdbId?.let { if (it !in byTmdb) byTmdb[it] = item } // putIfAbsent : API 24, l'app accepte Android 6
             byTitle.getOrPut(compact(item.title)) { mutableListOf() }.add(item)
         }
         val out = mutableListOf<MediaItem>()

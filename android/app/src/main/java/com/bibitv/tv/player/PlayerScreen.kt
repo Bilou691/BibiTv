@@ -72,6 +72,8 @@ import com.bibitv.tv.ui.PillButton
 import com.bibitv.tv.ui.PlayerRequest
 import com.bibitv.tv.ui.ProgressLine
 import com.bibitv.tv.ui.Focusable
+import com.bibitv.tv.ui.trapFocus
+import com.bibitv.tv.ui.requestWhenReady
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.videolan.libvlc.LibVLC
@@ -180,7 +182,7 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
     var lastKey by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var format by remember { mutableIntStateOf(SettingsStore.videoFormat) }
     var trackMenu by remember { mutableStateOf<Pair<String, List<Pair<String, () -> Unit>>>?>(null) }
-    val state = remember { object { var resumed = -1; var liveRetries = 0; var pfd: ParcelFileDescriptor? = null } }
+    val state = remember { object { var resumed = -1; var liveRetries = 0; var pfd: ParcelFileDescriptor? = null; var seekTarget = 0L } }
 
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -246,12 +248,22 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
         controls = true
     }
 
+    // Avance / retour : les appuis rapprochés sont additionnés puis envoyés en un seul saut au flux
+    // (chaque saut relance la mise en mémoire tampon réseau : 6 appuis = 6 attentes auparavant).
+    var pendingSeek by remember { mutableIntStateOf(0) }
     fun seekBy(seconds: Int) {
         if (req.isLive || !mp.isSeekable) return
-        val target = (mp.time + seconds * 1000L).coerceIn(0L, maxOf(0L, mp.length - 1000))
-        mp.setTime(target)
-        time = target
-        showOsd(if (seconds > 0) "+$seconds s" else "−${-seconds} s")
+        val base = if (pendingSeek == 0) mp.time else state.seekTarget
+        pendingSeek += seconds
+        state.seekTarget = (base + seconds * 1000L).coerceIn(0L, maxOf(0L, mp.length - 1000))
+        time = state.seekTarget
+        showOsd((if (pendingSeek > 0) "+$pendingSeek s" else "−${-pendingSeek} s") + "   ·   " + fmt(state.seekTarget), 1500)
+    }
+    LaunchedEffect(pendingSeek) {
+        if (pendingSeek == 0) return@LaunchedEffect
+        delay(350)
+        mp.setTime(state.seekTarget)
+        pendingSeek = 0
     }
 
     fun togglePause() {
@@ -321,7 +333,7 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                 }
                 MediaPlayer.Event.Paused -> playing = false
                 MediaPlayer.Event.Buffering -> buffering = ev.buffering < 100f
-                MediaPlayer.Event.TimeChanged -> { time = ev.timeChanged; if (time > 0) buffering = false }
+                MediaPlayer.Event.TimeChanged -> { if (pendingSeek == 0) time = ev.timeChanged; if (ev.timeChanged > 0) buffering = false }
                 MediaPlayer.Event.LengthChanged -> length = ev.lengthChanged
                 MediaPlayer.Event.EndReached -> scope.launch { onEnd() }
                 MediaPlayer.Event.EncounteredError -> {
@@ -542,7 +554,7 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
         trackMenu?.let { (title, actions) ->
             val first = remember(title) { FocusRequester() }
             Box(Modifier.fillMaxSize().background(Color(0x99000000)), contentAlignment = Alignment.CenterEnd) {
-                Column(Modifier.padding(end = if (tv) 48.dp else 16.dp, start = 16.dp).widthIn(max = 420.dp).clip(RoundedCornerShape(18.dp)).background(C.Surface).padding(18.dp)) {
+                Column(Modifier.padding(end = if (tv) 48.dp else 16.dp, start = 16.dp).widthIn(max = 420.dp).clip(RoundedCornerShape(18.dp)).background(C.Surface).padding(18.dp).trapFocus()) {
                     Text(title, color = C.Text2, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp, start = 6.dp))
                     LazyColumn(Modifier.heightIn(max = 380.dp)) {
                         itemsIndexed(actions) { i, (label, action) ->
@@ -555,7 +567,7 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                     }
                 }
             }
-            LaunchedEffect(title) { runCatching { first.requestFocus() } }
+            LaunchedEffect(title) { first.requestWhenReady() }
         }
     }
 }

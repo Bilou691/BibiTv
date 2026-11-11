@@ -30,6 +30,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,6 +95,39 @@ object C {
     val Yellow = Color(0xFFFFD60A)
 }
 
+/**
+ * Mémoire du focus à la télécommande. Quand un écran recouvre la grille (fiche, lecteur, menu),
+ * Compose perd l'élément qui avait le focus ; au retour, la touche suivante irait au premier
+ * élément de l'écran (l'onglet « Accueil »), ce qui changeait d'onglet. On retient donc la clé
+ * de la dernière tuile focalisée et on la lui redonne quand elle réapparaît.
+ */
+object FocusMemory {
+    /** Clé de la dernière tuile qui a eu le focus (affiche, chaîne, épisode…). */
+    var lastKey: String? = null
+    /** Clé à refocaliser dès que la tuile est affichée ; consommée une fois. */
+    var restoreKey by mutableStateOf<String?>(null)
+        private set
+
+    fun restore() { restoreKey = lastKey }
+    fun consumed(key: String) { if (restoreKey == key) restoreKey = null }
+}
+
+/**
+ * Demande le focus dès que l'élément est attaché : dans une liste paresseuse, l'élément n'existe
+ * qu'après la mesure, donc après le premier passage d'un LaunchedEffect (la demande échouait en silence).
+ */
+suspend fun FocusRequester.requestWhenReady(frames: Int = 30, isFocused: () -> Boolean = { true }): Boolean {
+    repeat(frames) {
+        if (runCatching { requestFocus(); true }.getOrDefault(false) && isFocused()) return true
+        androidx.compose.runtime.withFrameNanos { }
+    }
+    return false
+}
+
+/** Le focus ne peut pas sortir de cet élément (menus par-dessus un écran). */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+fun Modifier.trapFocus(): Modifier = this.focusProperties { exit = { FocusRequester.Cancel } }.focusGroup()
+
 /** Élément focalisable à la télécommande : léger zoom + contour blanc quand il a le focus. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -103,16 +139,28 @@ fun Focusable(
     shape: Shape = RoundedCornerShape(14.dp),
     focusedScale: Float = 1.08f,
     borderWidth: Dp = 3.dp,
+    /** Clé mémorisée pour retrouver le focus au retour d'une fiche ou du lecteur. */
+    focusKey: String? = null,
     content: @Composable BoxScope.(focused: Boolean) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) focusedScale else 1f, label = "scale")
+    val restore = focusKey != null && FocusMemory.restoreKey == focusKey
+    val requester = if (restore) remember { FocusRequester() } else null
+    if (requester != null) LaunchedEffect(requester) {
+        requester.requestWhenReady()
+        FocusMemory.consumed(focusKey!!)
+    }
     Box(
         modifier
+            .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .onFocusChanged {
                 focused = it.isFocused
-                if (it.isFocused) onFocus?.invoke()
+                if (it.isFocused) {
+                    if (focusKey != null) FocusMemory.lastKey = focusKey
+                    onFocus?.invoke()
+                }
             }
             .clip(shape)
             .border(if (focused) borderWidth else 0.dp, if (focused) Color.White else Color.Transparent, shape)
@@ -171,11 +219,12 @@ fun PosterCard(
     onFocus: (() -> Unit)? = null,
     width: Dp = Dp.Unspecified,
     fill: Boolean = false,
+    focusKey: String? = item.key,
 ) {
     @Suppress("UNUSED_VARIABLE") val rev = ProfileStore.revision.intValue // rafraîchit la pastille « VU »
     val w = if (width == Dp.Unspecified) LocalDims.current.poster else width
     Column(if (fill) Modifier.fillMaxWidth() else Modifier.width(w)) {
-        Focusable(onClick, Modifier.fillMaxWidth().aspectRatio(2f / 3f), onLongClick, onFocus) {
+        Focusable(onClick, Modifier.fillMaxWidth().aspectRatio(2f / 3f), onLongClick, onFocus, focusKey = focusKey) {
             Poster(item.imageUrl, item.initial, Modifier.fillMaxSize())
             if (ProfileStore.isWatched(item.key)) WatchedBadge(Modifier.align(Alignment.TopEnd).padding(8.dp))
         }
@@ -196,10 +245,11 @@ fun ChannelCard(
     onFocus: (() -> Unit)? = null,
     width: Dp = Dp.Unspecified,
     fill: Boolean = false,
+    focusKey: String? = null,
 ) {
     val w = if (width == Dp.Unspecified) LocalDims.current.channel else width
     Column(if (fill) Modifier.fillMaxWidth() else Modifier.width(w)) {
-        Focusable(onClick, Modifier.fillMaxWidth().aspectRatio(16f / 9f), onLongClick, onFocus) {
+        Focusable(onClick, Modifier.fillMaxWidth().aspectRatio(16f / 9f), onLongClick, onFocus, focusKey = focusKey) {
             Box(Modifier.fillMaxSize().background(C.Surface), contentAlignment = Alignment.Center) {
                 if (logo == null) Text(title.take(1).uppercase(), color = C.Text3, fontSize = 36.sp, fontWeight = FontWeight.Bold)
                 else AsyncImage(model = logo, contentDescription = null, contentScale = ContentScale.Fit,
@@ -213,7 +263,7 @@ fun ChannelCard(
 
 /** Grand numéro du Top 10 + affiche. */
 @Composable
-fun RankedPoster(r: RankedItem, onClick: () -> Unit, onLongClick: (() -> Unit)?) {
+fun RankedPoster(r: RankedItem, onClick: () -> Unit, onLongClick: (() -> Unit)?, onFocus: (() -> Unit)? = null) {
     val d = LocalDims.current
     Box(Modifier.width(d.rankWidth)) {
         Text(
@@ -221,7 +271,7 @@ fun RankedPoster(r: RankedItem, onClick: () -> Unit, onLongClick: (() -> Unit)?)
             style = androidx.compose.ui.text.TextStyle(brush = Brush.verticalGradient(listOf(Color(0xB3FFFFFF), Color(0x14FFFFFF)))),
             modifier = Modifier.align(Alignment.TopStart).padding(top = d.poster * 0.27f),
         )
-        Box(Modifier.align(Alignment.TopEnd)) { PosterCard(r.item, onClick, onLongClick) }
+        Box(Modifier.align(Alignment.TopEnd)) { PosterCard(r.item, onClick, onLongClick, onFocus, focusKey = "top:" + r.item.key) }
     }
 }
 
@@ -234,15 +284,15 @@ fun RankedChannel(r: RankedItem, onClick: () -> Unit, onFocus: () -> Unit) {
             style = androidx.compose.ui.text.TextStyle(brush = Brush.verticalGradient(listOf(Color(0xB3FFFFFF), Color(0x14FFFFFF)))),
             modifier = Modifier.align(Alignment.TopStart),
         )
-        Box(Modifier.align(Alignment.TopEnd)) { ChannelCard(r.item.title, r.item.imageUrl, onClick, onFocus = onFocus) }
+        Box(Modifier.align(Alignment.TopEnd)) { ChannelCard(r.item.title, r.item.imageUrl, onClick, onFocus = onFocus, focusKey = "topch:" + r.item.key) }
     }
 }
 
 /** Reprendre : affiche + barre de progression. */
 @Composable
-fun HistoryCard(h: HistoryEntry, onClick: () -> Unit, onLongClick: () -> Unit) {
+fun HistoryCard(h: HistoryEntry, onClick: () -> Unit, onLongClick: () -> Unit, onFocus: (() -> Unit)? = null) {
     Column(Modifier.width(LocalDims.current.poster)) {
-        Focusable(onClick, Modifier.fillMaxWidth().aspectRatio(2f / 3f), onLongClick) {
+        Focusable(onClick, Modifier.fillMaxWidth().aspectRatio(2f / 3f), onLongClick, onFocus, focusKey = "hist:" + h.key) {
             Poster(h.imageUrl, h.title.take(1).uppercase(), Modifier.fillMaxSize())
             Box(Modifier.fillMaxWidth().height(70.dp).align(Alignment.BottomCenter)
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xD9000000)))))
@@ -300,23 +350,25 @@ fun Spinner(text: String) {
 /** Menu d'actions (appui long sur OK). */
 @Composable
 fun ActionMenu(title: String, actions: List<Pair<String, () -> Unit>>, onDismiss: () -> Unit) {
-    androidx.activity.compose.BackHandler(onBack = onDismiss)
+    // À la fermeture, la tuile qui avait ouvert le menu reprend le focus.
+    val close = { FocusMemory.restore(); onDismiss() }
+    androidx.activity.compose.BackHandler(onBack = close)
     val first = remember { FocusRequester() }
     Box(Modifier.fillMaxSize().background(Color(0xB3000000)), contentAlignment = Alignment.Center) {
         Column(
-            Modifier.padding(24.dp).widthIn(max = 420.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.Surface).padding(18.dp),
+            Modifier.padding(24.dp).widthIn(max = 420.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.Surface).padding(18.dp).trapFocus(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(title, color = C.Text2, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(bottom = 6.dp, start = 6.dp))
             actions.forEachIndexed { i, (label, action) ->
                 val m = if (i == 0) Modifier.fillMaxWidth().focusRequester(first) else Modifier.fillMaxWidth()
-                Focusable({ action(); onDismiss() }, m, shape = RoundedCornerShape(10.dp), focusedScale = 1.02f, borderWidth = 0.dp) { f ->
+                Focusable({ action(); close() }, m, shape = RoundedCornerShape(10.dp), focusedScale = 1.02f, borderWidth = 0.dp) { f ->
                     Text(label, color = if (f) Color(0xFF0A0A0C) else C.Text, fontSize = 16.sp,
                         modifier = Modifier.fillMaxWidth().background(if (f) Color.White else Color.Transparent).padding(horizontal = 14.dp, vertical = 12.dp))
                 }
             }
         }
     }
-    androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    LaunchedEffect(Unit) { first.requestWhenReady() }
 }

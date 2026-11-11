@@ -47,6 +47,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -78,7 +81,7 @@ fun DetailScreen(item: MediaItem, vm: AppViewModel) {
     val series = vm.seriesInfo
     val labels = remember(item) { vm.versionLabels(item) }
     val playFocus = remember { FocusRequester() }
-    var season by remember(series) { mutableIntStateOf(0) }
+    val season = vm.detailSeason
 
     val year = vm.yearText(movie?.releaseDate ?: series?.releaseDate) ?: item.year
     val meta = listOfNotNull(
@@ -94,7 +97,7 @@ fun DetailScreen(item: MediaItem, vm: AppViewModel) {
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color(0xF20A0A0C), 0.45f to Color(0xB30A0A0C), 1f to Color(0x1A0A0A0C))))
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to C.Bg)))
 
-        LazyColumn(contentPadding = PaddingValues(start = 64.dp, end = 64.dp, top = 40.dp, bottom = 60.dp)) {
+        LazyColumn(state = vm.detailListState, contentPadding = PaddingValues(start = 64.dp, end = 64.dp, top = 40.dp, bottom = 60.dp)) {
             item {
                 Row {
                     Poster(item.imageUrl, item.initial, Modifier.width(240.dp).aspectRatio(2f / 3f), cornerRadius = 16.dp)
@@ -136,9 +139,16 @@ fun DetailScreen(item: MediaItem, vm: AppViewModel) {
             // Saisons / épisodes
             if (series != null && series.seasons.isNotEmpty()) {
                 item {
-                    Row(Modifier.padding(top = 40.dp), verticalAlignment = Alignment.CenterVertically) {
-                        LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            itemsIndexed(series.seasons) { i, s -> PillButton(s.label, { season = i }, selected = i == season, onFocus = { season = i }) }
+                    // La saison suit le focus, mais seulement si la sélection s'y pose (traverser la rangée
+                    // pour descendre aux épisodes ne change plus la saison affichée).
+                    var pendingSeason by remember(series) { mutableIntStateOf(-1) }
+                    LaunchedEffect(pendingSeason) { if (pendingSeason >= 0) { kotlinx.coroutines.delay(350); vm.detailSeason = pendingSeason } }
+                    // En descendant depuis « Lecture », le focus arrive sur les saisons (pas sur « Télécharger la saison »).
+                    val seasonsReq = remember { FocusRequester() }
+                    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+                    Row(Modifier.padding(top = 40.dp).focusProperties { enter = { seasonsReq } }.focusGroup(), verticalAlignment = Alignment.CenterVertically) {
+                        LazyRow(Modifier.weight(1f).focusRequester(seasonsReq).focusRestorer(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            itemsIndexed(series.seasons) { i, s -> PillButton(s.label, { pendingSeason = -1; vm.detailSeason = i }, selected = i == season, onFocus = { pendingSeason = i }) }
                         }
                         PillButton("⬇  Télécharger la saison", { vm.downloadSeason(series.seasons[season.coerceIn(0, series.seasons.size - 1)].episodes) })
                     }
@@ -146,8 +156,11 @@ fun DetailScreen(item: MediaItem, vm: AppViewModel) {
                 val eps = series.seasons[season.coerceIn(0, series.seasons.size - 1)].episodes
                 items(eps, key = { it.id }) { ep ->
                     val watched = ProfileStore.isWatched(ProfileStore.episodeKey(ep.id))
-                    Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Focusable({ vm.playEpisode(ep) }, Modifier.width(220.dp).aspectRatio(16f / 9f)) {
+                    // En arrivant sur une ligne d'épisode, le focus se pose sur la vignette (lecture), pas sur « ⬇ ».
+                    val thumb = remember { FocusRequester() }
+                    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+                    Row(Modifier.padding(top = 16.dp).focusProperties { enter = { thumb } }.focusGroup(), verticalAlignment = Alignment.CenterVertically) {
+                        Focusable({ vm.playEpisode(ep) }, Modifier.focusRequester(thumb).width(220.dp).aspectRatio(16f / 9f), focusKey = "ep:" + ep.id) {
                             Box(Modifier.fillMaxSize().background(C.Surface), contentAlignment = Alignment.Center) {
                                 Text("▶", color = C.Text3, fontSize = 22.sp)
                                 if (ep.image != null) AsyncImage(ep.image, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -167,7 +180,10 @@ fun DetailScreen(item: MediaItem, vm: AppViewModel) {
             }
         }
     }
-    LaunchedEffect(item) { runCatching { playFocus.requestFocus() } }
+    // Le bouton est dans une liste paresseuse : la demande de focus doit attendre qu'il soit mesuré,
+    // sinon la fiche s'ouvre sans focus et le 1er OK de la télécommande tombe sur le choix de version.
+    // Au retour du lecteur après un épisode, c'est l'épisode qui reprend le focus.
+    LaunchedEffect(item) { if (FocusMemory.restoreKey?.startsWith("ep:") != true) playFocus.requestWhenReady() }
 }
 
 // =================== Personnaliser ===================
@@ -249,14 +265,17 @@ fun DownloadsScreen(vm: AppViewModel) {
 
     val compact = LocalDims.current.compact
     val tv = com.bibitv.tv.data.Device.isTv
+    val first = remember { FocusRequester() }
+    var firstFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { first.requestWhenReady(60) { firstFocused } }
     val header: @Composable () -> Unit = {
         Column(if (compact) Modifier.fillMaxWidth() else Modifier.width(440.dp)) {
             Text("Téléchargements", color = C.Text, fontSize = if (compact) 28.sp else 34.sp, fontWeight = FontWeight.Bold)
             Text("Emplacement", color = C.Text2, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp, bottom = 10.dp))
-            options.forEach { o ->
+            options.forEachIndexed { i, o ->
                 val selected = o.id == current.id
-                Focusable({ DownloadManager.setTarget(o); refresh++ }, Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    shape = RoundedCornerShape(14.dp), focusedScale = 1.02f) { f ->
+                Focusable({ DownloadManager.setTarget(o); refresh++ }, (if (i == 0) Modifier.focusRequester(first) else Modifier).fillMaxWidth().padding(vertical = 4.dp),
+                    onFocus = if (i == 0) ({ firstFocused = true }) else null, shape = RoundedCornerShape(14.dp), focusedScale = 1.02f) { f ->
                     Row(Modifier.fillMaxWidth().background(if (selected) C.Surface2 else C.Surface).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(if (selected) "◉" else "○", color = if (selected) C.Blue else C.Text2, fontSize = 18.sp)
                         Column(Modifier.padding(start = 14.dp)) {
@@ -405,7 +424,7 @@ fun SettingsScreen(vm: AppViewModel) {
                 }
                 PillButton(if (direct) "Activé" else "Désactivé", {
                     direct = !direct; SettingsStore.directRendering = direct
-                }, activeColor = if (direct) C.Green else null)
+                }, if (com.bibitv.tv.data.Device.isTv) Modifier else Modifier.focusRequester(first), activeColor = if (direct) C.Green else null)
             }
 
             Text("PLAYLISTS", color = C.Text2, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 26.dp, bottom = 10.dp))
@@ -455,5 +474,5 @@ fun SettingsScreen(vm: AppViewModel) {
             }
         }
     }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    LaunchedEffect(Unit) { first.requestWhenReady() }
 }
