@@ -694,9 +694,13 @@
                             <TextBlock x:Name="HeaderCount" FontSize="15" Foreground="{StaticResource TextSecondary}"
                                        VerticalAlignment="Bottom" Margin="12,0,0,6" />
                         </StackPanel>
-                        <ToggleButton x:Name="HideWatchedToggle" Content="Masquer les vus" Style="{StaticResource TogglePill}"
-                                      HorizontalAlignment="Right" VerticalAlignment="Center"
-                                      Checked="HideWatched_Changed" Unchecked="HideWatched_Changed" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <ToggleButton x:Name="SortToggle" Content="⇅  Tri : Par défaut" Style="{StaticResource TogglePill}"
+                                          Margin="0,0,8,0" Click="Sort_Click"
+                                          ToolTip="Changer l'ordre : derniers ajouts, note TMDB, année, titre" />
+                            <ToggleButton x:Name="HideWatchedToggle" Content="Masquer les vus" Style="{StaticResource TogglePill}"
+                                          Checked="HideWatched_Changed" Unchecked="HideWatched_Changed" />
+                        </StackPanel>
                     </Grid>
 
                     <ListBox x:Name="PosterList" Grid.Row="1" Style="{StaticResource TileList}" ItemTemplate="{StaticResource PosterTemplate}"

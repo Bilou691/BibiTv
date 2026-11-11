@@ -199,6 +199,7 @@ public partial class MainWindow : Window
         ShowView(home: false);
         HideWatchedToggle.Visibility = section == Section.Live ? Visibility.Collapsed : Visibility.Visible;
         HideWatchedToggle.IsChecked = ProfileService.Current.HideWatched;
+        UpdateSortButton();
         SearchBox.Text = "";
         PosterList.Visibility = section == Section.Live ? Visibility.Collapsed : Visibility.Visible;
         LiveList.Visibility = section == Section.Live ? Visibility.Visible : Visibility.Collapsed;
@@ -285,6 +286,24 @@ public partial class MainWindow : Window
         ApplyFilter();
     }
 
+    private readonly Dictionary<Section, SortMode> _sorts = new();
+    private SortMode CurrentSort => _sorts.TryGetValue(_section, out var m) ? m : SortMode.Default;
+
+    private void UpdateSortButton()
+    {
+        SortToggle.Content = "⇅  Tri : " + SortModes.Label(CurrentSort);
+        SortToggle.IsChecked = CurrentSort != SortMode.Default;
+    }
+
+    private void Sort_Click(object sender, RoutedEventArgs e)
+    {
+        var modes = SortModes.For(_section);
+        var i = Array.IndexOf(modes, CurrentSort);
+        _sorts[_section] = modes[(i + 1) % modes.Length];
+        UpdateSortButton();
+        ApplyFilter();
+    }
+
     private ListBox ActiveList => _section == Section.Live ? LiveList : PosterList;
 
     private void ApplyFilter()
@@ -314,7 +333,7 @@ public partial class MainWindow : Window
 
         if (ProfileService.Current.HideWatched && query.Length == 0 && _section != Section.Live)
             result = result.Where(i => !i.IsWatched);
-        var list = result.ToList();
+        var list = SortModes.Apply(result, CurrentSort).ToList();
         HeaderCount.Text = list.Count switch
         {
             0 => "",
