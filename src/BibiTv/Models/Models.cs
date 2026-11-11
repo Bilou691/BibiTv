@@ -5,6 +5,37 @@ namespace BibiTv.Models;
 
 public enum Section { Live, Movies, Series }
 
+/// <summary>Ordre d'affichage d'une liste du catalogue (valable dans toutes les catégories).</summary>
+public enum SortMode { Default, Added, Rating, Year, Title }
+
+public static class SortModes
+{
+    public static string Label(SortMode m) => m switch
+    {
+        SortMode.Added => "Derniers ajouts",
+        SortMode.Rating => "Note TMDB",
+        SortMode.Year => "Année",
+        SortMode.Title => "A → Z",
+        _ => "Par défaut",
+    };
+
+    public static SortMode[] For(Section s) => s == Section.Live
+        ? new[] { SortMode.Default, SortMode.Title }
+        : new[] { SortMode.Default, SortMode.Added, SortMode.Rating, SortMode.Year, SortMode.Title };
+
+    public static IEnumerable<MediaItem> Apply(IEnumerable<MediaItem> items, SortMode m) => m switch
+    {
+        SortMode.Added => items.OrderByDescending(i => i.Added),
+        SortMode.Rating => items.OrderByDescending(i => ParseRating(i.Rating)).ThenByDescending(i => i.Added),
+        SortMode.Year => items.OrderByDescending(i => int.TryParse(i.Year, out var y) ? y : 0).ThenByDescending(i => i.Added),
+        SortMode.Title => items.OrderBy(i => i.Title.Trim(), StringComparer.CurrentCultureIgnoreCase),
+        _ => items,
+    };
+
+    private static double ParseRating(string? r) =>
+        double.TryParse(r, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0;
+}
+
 public sealed class Category
 {
     public string Id { get; init; } = "";

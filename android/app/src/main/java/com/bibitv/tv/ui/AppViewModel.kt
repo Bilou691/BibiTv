@@ -19,6 +19,8 @@ import com.bibitv.tv.data.ProfileStore
 import com.bibitv.tv.data.RankedItem
 import com.bibitv.tv.data.Recommendations
 import com.bibitv.tv.data.Section
+import com.bibitv.tv.data.SortMode
+import com.bibitv.tv.data.sortedByMode
 import com.bibitv.tv.data.SeriesInfo
 import com.bibitv.tv.data.SettingsStore
 import com.bibitv.tv.data.TitleGrouper
@@ -120,6 +122,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Position dans les listes (conservée quand on revient d'une fiche) ----------
     val catalogCategory = mutableStateMapOf<Section, String>()
     val catalogQuery = mutableStateMapOf<Section, String>()
+    val catalogSort = mutableStateMapOf<Section, SortMode>()
     val gridStates = HashMap<Section, androidx.compose.foundation.lazy.grid.LazyGridState>()
     val homeState = androidx.compose.foundation.lazy.LazyListState()
 
@@ -377,7 +380,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return list
     }
 
-    fun filtered(section: Section, categoryId: String, query: String): List<MediaItem> {
+    fun filtered(section: Section, categoryId: String, query: String, sort: SortMode = SortMode.Default): List<MediaItem> {
         val all = items[section] ?: return emptyList()
         val q = query.trim()
         var result: List<MediaItem> = when {
@@ -391,7 +394,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (ProfileStore.profile.hideWatched && q.isEmpty() && section != Section.Live)
             result = result.filter { !ProfileStore.isWatched(it.key) }
-        return result
+        return result.sortedByMode(sort)
     }
 
     // =================== Accueil ===================

@@ -76,6 +76,7 @@ import com.bibitv.tv.data.DownloadManager
 import com.bibitv.tv.data.MediaItem
 import com.bibitv.tv.data.ProfileStore
 import com.bibitv.tv.data.Section
+import com.bibitv.tv.data.SortMode
 import com.bibitv.tv.data.TitleGrouper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -186,7 +187,8 @@ fun MobileCatalog(vm: AppViewModel, section: Section) {
     // Filtrage après une courte pause de frappe : fluide même avec un gros catalogue.
     var debounced by remember(section) { mutableStateOf(query) }
     LaunchedEffect(query) { delay(250); debounced = query }
-    val list = remember(all, category, debounced, rev) { vm.filtered(section, category, debounced) }
+    val sort = vm.catalogSort[section] ?: SortMode.Default
+    val list = remember(all, category, debounced, rev, sort) { vm.filtered(section, category, debounced, sort) }
     val gridState = vm.gridStates.getOrPut(section) { LazyGridState() }
     val scope = rememberCoroutineScope()
 
@@ -229,7 +231,13 @@ fun MobileCatalog(vm: AppViewModel, section: Section) {
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(if (list.size == 1) "1 élément" else "${list.size} éléments", color = C.Text2, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            val sortModes = SortMode.modesFor(section)
+            PillButton("⇅ ${sort.label}", {
+                vm.catalogSort[section] = sortModes[(sortModes.indexOf(sort) + 1) % sortModes.size]
+                scope.launch { gridState.scrollToItem(0) }
+            }, selected = sort != SortMode.Default, compact = true)
             if (section != Section.Live) {
+                Spacer(Modifier.width(8.dp))
                 val hide = ProfileStore.profile.hideWatched
                 PillButton(if (hide) "✓ Vus masqués" else "Masquer les vus", { ProfileStore.setHideWatched(!hide) }, selected = hide, compact = true)
             }

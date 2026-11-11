@@ -4,6 +4,28 @@ import java.util.Locale
 
 enum class Section { Live, Movies, Series }
 
+/** Ordre d'affichage d'une liste du catalogue (valable dans toutes les catégories). */
+enum class SortMode(val label: String) {
+    Default("Par défaut"),
+    Added("Derniers ajouts"),
+    Rating("Note TMDB"),
+    Year("Année"),
+    Title("A → Z");
+
+    companion object {
+        fun modesFor(section: Section): List<SortMode> =
+            if (section == Section.Live) listOf(Default, Title) else entries.toList()
+    }
+}
+
+fun List<MediaItem>.sortedByMode(mode: SortMode): List<MediaItem> = when (mode) {
+    SortMode.Default -> this
+    SortMode.Added -> sortedByDescending { it.added }
+    SortMode.Rating -> sortedWith(compareByDescending<MediaItem> { it.rating?.toDoubleOrNull() ?: 0.0 }.thenByDescending { it.added })
+    SortMode.Year -> sortedWith(compareByDescending<MediaItem> { it.year?.toIntOrNull() ?: 0 }.thenByDescending { it.added })
+    SortMode.Title -> this.sortedBy { it.title.trim().lowercase(Locale.ROOT) }
+}
+
 data class Category(
     val id: String,
     val name: String,

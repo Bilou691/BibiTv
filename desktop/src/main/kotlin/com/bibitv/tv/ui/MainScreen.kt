@@ -59,6 +59,7 @@ import com.bibitv.tv.data.MediaItem
 import com.bibitv.tv.data.ProfileStore
 import com.bibitv.tv.data.Recommendations
 import com.bibitv.tv.data.Section
+import com.bibitv.tv.data.SortMode
 
 @Composable
 fun MainScreen(vm: AppViewModel) {
@@ -267,7 +268,8 @@ internal fun CatalogScreen(vm: AppViewModel, section: Section) {
     val query = vm.catalogQuery[section] ?: ""
     val rev = ProfileStore.revision.intValue
     val cats = remember(all, rev) { vm.categoryList(section) }
-    val list = remember(all, category, query, rev) { vm.filtered(section, category, query) }
+    val sort = vm.catalogSort[section] ?: SortMode.Default
+    val list = remember(all, category, query, rev, sort) { vm.filtered(section, category, query, sort) }
     val gridState = vm.gridStates.getOrPut(section) { LazyGridState() }
     val scope = rememberCoroutineScope()
     fun select(id: String) {
@@ -339,6 +341,12 @@ internal fun CatalogScreen(vm: AppViewModel, section: Section) {
                     vm.catalogQuery[section] = q
                     scope.launch { gridState.scrollToItem(0) }
                 }
+                Spacer(Modifier.width(12.dp))
+                val sortModes = SortMode.modesFor(section)
+                PillButton("⇅  Tri : ${sort.label}", {
+                    vm.catalogSort[section] = sortModes[(sortModes.indexOf(sort) + 1) % sortModes.size]
+                    scope.launch { gridState.scrollToItem(0) }
+                }, selected = sort != SortMode.Default)
                 if (section != Section.Live) {
                     Spacer(Modifier.width(12.dp))
                     val hide = ProfileStore.profile.hideWatched
