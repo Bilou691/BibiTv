@@ -154,6 +154,15 @@ fun DetailScreen(item: MediaItem, vm: AppViewModel) {
                     }
                 }
                 val eps = series.seasons[season.coerceIn(0, series.seasons.size - 1)].episodes
+                // Arrivée depuis « Reprendre » : on défile jusqu'à l'épisode en cours (le curseur s'y pose via FocusMemory).
+                val target = vm.focusEpisodeId
+                if (target != null) item(key = "focus-target") {
+                    LaunchedEffect(target, season) {
+                        val idx = eps.indexOfFirst { it.id == target }
+                        if (idx >= 0) runCatching { vm.detailListState.scrollToItem(3 + idx) }
+                        vm.focusEpisodeId = null
+                    }
+                }
                 items(eps, key = { it.id }) { ep ->
                     val watched = ProfileStore.isWatched(ProfileStore.episodeKey(ep.id))
                     // En arrivant sur une ligne d'épisode, le focus se pose sur la vignette (lecture), pas sur « ⬇ ».

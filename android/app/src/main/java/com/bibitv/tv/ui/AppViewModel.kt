@@ -175,6 +175,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var seriesInfo by mutableStateOf<SeriesInfo?>(null)
     /** Saison affichée sur la fiche : celle du dernier épisode regardé, conservée au retour du lecteur. */
     var detailSeason by mutableStateOf(0)
+    /** Épisode sur lequel poser le curseur à l'ouverture de la fiche (depuis « Reprendre ») ; consommé une fois. */
+    var focusEpisodeId by mutableStateOf<String?>(null)
     /** Défilement de la fiche, conservé au retour du lecteur (l'épisode quitté est encore visible et reprend le focus). */
     var detailListState = androidx.compose.foundation.lazy.LazyListState()
         private set
@@ -596,8 +598,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * « Reprendre » de l'accueil : ouvre d'abord la fiche du film ou de la série (choix de la version,
+     * de l'épisode…). Pour une série, le curseur se pose sur l'épisode en cours. Les chaînes reprennent directement.
+     */
+    fun resumeToDetail(h: HistoryEntry, siblings: List<HistoryEntry>) {
+        if (h.kind == Section.Live) { resume(h, siblings); return }
+        val item = byKey[h.key] ?: MediaItem(h.kind, h.itemId, h.title, h.imageUrl, "").also { it.variants = listOf(it) }
+        focusEpisodeId = h.episodeId
+        if (h.episodeId != null) FocusMemory.request("ep:" + h.episodeId)
+        detailListState = androidx.compose.foundation.lazy.LazyListState()
+        detail = item
+        selectVariant(item.variants.firstOrNull { it.id == h.itemId } ?: item.variants.firstOrNull() ?: item)
+    }
+
     /** Appelé par le lecteur quand une entrée démarre. */
     fun onEntryStarted(e: PlaylistEntry) {
+        // Pendant la lecture, les affiches en cache mémoire ne servent à rien : on libère de la RAM pour le décodeur.
+        runCatching { coil.Coil.imageLoader(getApplication<Application>()).memoryCache?.clear() }
         e.history?.let {
             val entry = it.copy()
             ProfileStore.touch(entry)
