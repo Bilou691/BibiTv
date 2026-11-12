@@ -93,7 +93,9 @@ jobs:
   # et des PC équipés de l'ancienne app Windows (elle télécharge BibiTv-win-x64.zip).
   release:
     needs: build
-    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
+    # always() : la release part même si un job du build (ex. macOS, runner indisponible) échoue ;
+    # l'étape « Fichiers requis » exige au moins le .deb Linux et le zip Windows.
+    if: always() && github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -104,6 +106,11 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Fichiers requis
+        run: |
+          ls -l dist
+          test -f dist/BibiTV-linux-amd64.deb && test -f dist/BibiTv-win-x64.zip
+          [ -f dist/BibiTV-macos-arm64.dmg ] || echo "::warning::.dmg macOS absent : release publiée sans lui"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.version }}
