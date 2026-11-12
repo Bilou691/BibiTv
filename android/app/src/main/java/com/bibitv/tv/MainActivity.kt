@@ -38,12 +38,23 @@ class BibiApp : Application(), ImageLoaderFactory {
         DownloadManager.init(this)
     }
 
+    /** Mémoire basse signalée par Android : on libère les images en cache plutôt que de laisser la lecture ramer. */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_RUNNING_LOW) coil.Coil.imageLoader(this).memoryCache?.clear()
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        coil.Coil.imageLoader(this).memoryCache?.clear()
+    }
+
     /** Affiches et logos : cache mémoire + disque (256 Mo), sans fondu, pour une navigation fluide. */
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .okHttpClient(XtreamClient.http)
         .crossfade(false)
         .respectCacheHeaders(false)
-        .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.25).build() }
+        .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.10).build() }
         .diskCache { DiskCache.Builder().directory(cacheDir.resolve("images")).maxSizeBytes(256L * 1024 * 1024).build() }
         .build()
 }

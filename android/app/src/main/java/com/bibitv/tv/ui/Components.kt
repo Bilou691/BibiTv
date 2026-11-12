@@ -109,6 +109,7 @@ object FocusMemory {
         private set
 
     fun restore() { restoreKey = lastKey }
+    fun request(key: String) { restoreKey = key }
     fun consumed(key: String) { if (restoreKey == key) restoreKey = null }
 }
 

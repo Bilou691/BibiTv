@@ -147,7 +147,7 @@ internal fun HomeScreen(vm: AppViewModel) {
         item {
             val vod = history.filter { it.kind != Section.Live }.take(20)
             ShelfRow("Reprendre", "Films et séries regardés récemment", vod, key = { it.key }) { h ->
-                HistoryCard(h, { vm.resume(h, vod) }, { vm.historyMenu(h) }, noEpg)
+                HistoryCard(h, { vm.resumeToDetail(h, vod) }, { vm.historyMenu(h) }, noEpg)
             }
         }
         item {

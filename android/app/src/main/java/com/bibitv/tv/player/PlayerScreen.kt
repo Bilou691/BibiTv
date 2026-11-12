@@ -375,8 +375,9 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
     // Petite fenêtre (PiP) : aucun contrôle par-dessus la vidéo.
     LaunchedEffect(inPip) { if (inPip) { controls = false; trackMenu = null } }
 
-    // Sauvegarde régulière de la position (reprise)
-    LaunchedEffect(Unit) { while (true) { delay(15_000); report() } }
+    // Sauvegarde régulière de la position (reprise) : chaque minute, et toujours à la fermeture / au changement d'épisode.
+    // (Toutes les 15 s, la réécriture du profil sur le fil principal surchargeait les petites TV.)
+    LaunchedEffect(Unit) { while (true) { delay(60_000); report() } }
 
     // Masquage automatique des contrôles
     LaunchedEffect(controls, lastKey, playing) {
