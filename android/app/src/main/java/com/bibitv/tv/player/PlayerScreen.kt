@@ -2,6 +2,9 @@ package com.bibitv.tv.player
 
 import android.app.Activity
 import android.content.Context
+import android.media.MediaMetadata
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -167,6 +170,16 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
     val activity = context as? Activity
     val lib = remember { Vlc.get(context) }
     val mp = remember { MediaPlayer(lib) }
+    // Session média Android : annonce au système (et à la domotique) le titre et l'état de la lecture en cours.
+    val session = remember {
+        MediaSession(context, "BibiTV").apply {
+            setCallback(object : MediaSession.Callback() {
+                override fun onPlay() { mp.play() }
+                override fun onPause() { mp.pause() }
+            })
+            isActive = true
+        }
+    }
     val scope = rememberCoroutineScope()
 
     var index by remember { mutableIntStateOf(req.index) }
@@ -360,6 +373,8 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
                 activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER
             }
             report()
+            session.isActive = false
+            session.release()
             mp.setEventListener(null)
             mp.stop()
             mp.detachViews()
@@ -368,6 +383,30 @@ fun PlayerScreen(req: PlayerRequest, vm: AppViewModel, onClose: () -> Unit) {
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             activity?.let { resetDisplayMode(it) }
         }
+    }
+
+    // Titre et état publiés dans la session média (visibles par `dumpsys media_session`, Home Assistant, etc.).
+    LaunchedEffect(index, playing, buffering, error, subtitle, length) {
+        val e = req.playlist.getOrNull(index) ?: return@LaunchedEffect
+        session.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, e.title)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, subtitle)
+                .putLong(MediaMetadata.METADATA_KEY_DURATION, length)
+                .build()
+        )
+        val etat = when {
+            error != null -> PlaybackState.STATE_ERROR
+            buffering -> PlaybackState.STATE_BUFFERING
+            playing -> PlaybackState.STATE_PLAYING
+            else -> PlaybackState.STATE_PAUSED
+        }
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setState(etat, time, if (playing) 1f else 0f)
+                .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE)
+                .build()
+        )
     }
 
     // App passée en arrière-plan (touche Accueil, fenêtre PiP fermée) : pause.
